@@ -14,16 +14,15 @@ from mcp_zero.transport.errors import SessionError, TransportConnectionError
 
 
 class StreamableHTTPTransport(MCPTransport):
-    """Wraps the MCP SDK's ``streamable_http_client`` context manager.
-
-    Story #8 will add OBO token injection and auth headers.
-    """
+    """Wraps the MCP SDK's ``streamable_http_client`` context manager."""
 
     def __init__(self, *args: object, **kwargs: object) -> None:
         super().__init__(*args, **kwargs)  # type: ignore[arg-type]
         self._exit_stack: AsyncExitStack | None = None
 
-    async def connect(self, context: RequestContext | None = None) -> None:
+    async def connect(
+        self, context: RequestContext | None = None, *, auth_token: str | None = None
+    ) -> None:
         if self._state == TransportState.CONNECTED:
             return
 
@@ -32,15 +31,20 @@ class StreamableHTTPTransport(MCPTransport):
         try:
             stack = AsyncExitStack()
 
-            # Inject correlation / trace headers when a context is available.
-            http_client: httpx.AsyncClient | None = None
+            # Build headers: correlation/trace when context is available, auth when token provided.
+            headers: dict[str, str] = {}
             if context:
+                headers["X-Correlation-ID"] = context.correlation_id
+                headers["X-Trace-ID"] = context.trace_id
+            if auth_token:
+                headers["Authorization"] = f"Bearer {auth_token}"
+
+            http_client: httpx.AsyncClient | None = None
+            if headers:
                 http_client = await stack.enter_async_context(
                     httpx.AsyncClient(
-                        headers={
-                            "X-Correlation-ID": context.correlation_id,
-                            "X-Trace-ID": context.trace_id,
-                        }
+                        headers=headers,
+                        timeout=httpx.Timeout(self._config.timeout_seconds),
                     )
                 )
 

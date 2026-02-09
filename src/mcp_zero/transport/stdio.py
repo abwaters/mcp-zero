@@ -24,7 +24,9 @@ class StdioTransport(MCPTransport):
         self._exit_stack: AsyncExitStack | None = None
         self._last_context: RequestContext | None = None
 
-    async def connect(self, context: RequestContext | None = None) -> None:
+    async def connect(
+        self, context: RequestContext | None = None, *, auth_token: str | None = None
+    ) -> None:
         if self._state == TransportState.CONNECTED:
             return
 

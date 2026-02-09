@@ -131,12 +131,13 @@ class TestStreamableHTTPTransport:
 
             await t.connect(context=ctx)
 
-            mock_httpx.assert_called_once_with(
-                headers={"X-Correlation-ID": "c-1", "X-Trace-ID": "t-1"}
-            )
+            mock_httpx.assert_called_once()
+            call_kwargs = mock_httpx.call_args[1]
+            assert call_kwargs["headers"]["X-Correlation-ID"] == "c-1"
+            assert call_kwargs["headers"]["X-Trace-ID"] == "t-1"
             # httpx client instance passed to streamable_http_client
-            call_kwargs = mock_sdk["client"].call_args[1]
-            assert call_kwargs["http_client"] is mock_httpx_inst
+            sdk_call_kwargs = mock_sdk["client"].call_args[1]
+            assert sdk_call_kwargs["http_client"] is mock_httpx_inst
 
     @pytest.mark.asyncio
     async def test_connect_without_context_no_http_client(self, mock_sdk):
@@ -147,6 +148,63 @@ class TestStreamableHTTPTransport:
 
         call_kwargs = mock_sdk["client"].call_args[1]
         assert call_kwargs["http_client"] is None
+
+    @pytest.mark.asyncio
+    async def test_connect_with_auth_token(self, mock_sdk):
+        cfg = make_http_config()
+        t = StreamableHTTPTransport(cfg)
+
+        with patch("mcp_zero.transport.http.httpx.AsyncClient") as mock_httpx:
+            mock_httpx_inst = AsyncMock()
+            mock_httpx_inst.__aenter__ = AsyncMock(return_value=mock_httpx_inst)
+            mock_httpx_inst.__aexit__ = AsyncMock(return_value=False)
+            mock_httpx.return_value = mock_httpx_inst
+
+            await t.connect(auth_token="my-obo-token")
+
+            call_kwargs = mock_httpx.call_args[1]
+            assert call_kwargs["headers"]["Authorization"] == "Bearer my-obo-token"
+
+    @pytest.mark.asyncio
+    async def test_connect_with_context_and_auth_token(self, mock_sdk):
+        cfg = make_http_config()
+        ctx = RequestContext(correlation_id="c-1", trace_id="t-1")
+        t = StreamableHTTPTransport(cfg)
+
+        with patch("mcp_zero.transport.http.httpx.AsyncClient") as mock_httpx:
+            mock_httpx_inst = AsyncMock()
+            mock_httpx_inst.__aenter__ = AsyncMock(return_value=mock_httpx_inst)
+            mock_httpx_inst.__aexit__ = AsyncMock(return_value=False)
+            mock_httpx.return_value = mock_httpx_inst
+
+            await t.connect(context=ctx, auth_token="tok")
+
+            call_kwargs = mock_httpx.call_args[1]
+            assert call_kwargs["headers"]["Authorization"] == "Bearer tok"
+            assert call_kwargs["headers"]["X-Correlation-ID"] == "c-1"
+
+    @pytest.mark.asyncio
+    async def test_connect_applies_timeout(self, mock_sdk):
+        cfg = ServerConfig(
+            name="test-http",
+            transport=TransportType.HTTP,
+            url="http://localhost:8080",
+            timeout_seconds=60.0,
+        )
+        ctx = RequestContext()
+        t = StreamableHTTPTransport(cfg)
+
+        with patch("mcp_zero.transport.http.httpx.AsyncClient") as mock_httpx:
+            mock_httpx_inst = AsyncMock()
+            mock_httpx_inst.__aenter__ = AsyncMock(return_value=mock_httpx_inst)
+            mock_httpx_inst.__aexit__ = AsyncMock(return_value=False)
+            mock_httpx.return_value = mock_httpx_inst
+
+            await t.connect(context=ctx)
+
+            call_kwargs = mock_httpx.call_args[1]
+            timeout = call_kwargs["timeout"]
+            assert timeout.connect == 60.0
 
     @pytest.mark.asyncio
     async def test_error_carries_correlation_id(self, mock_sdk):

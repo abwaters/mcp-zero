@@ -32,6 +32,11 @@ class ServerConfig:
     max_restarts: int = 3
     restart_delay: float = 1.0  # seconds, base for exponential backoff
 
+    # Timeout and retry
+    timeout_seconds: float = 30.0
+    max_retries: int = 2
+    retry_delay_seconds: float = 1.0
+
     def __post_init__(self) -> None:
         if self.transport == TransportType.HTTP:
             if not self.url:

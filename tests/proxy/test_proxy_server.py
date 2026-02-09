@@ -1,0 +1,271 @@
+"""Tests for proxy server."""
+
+import asyncio
+from unittest.mock import AsyncMock
+
+import pytest
+from mcp.types import CallToolResult, ListToolsResult, TextContent, Tool
+
+from mcp_zero.context import HookContext, PolicyDecision
+from mcp_zero.pipeline import Pipeline, PipelineResult
+from mcp_zero.proxy.auth import AuthProvider
+from mcp_zero.proxy.errors import RoutingError, UpstreamError
+from mcp_zero.proxy.proxy_server import ProxyServer
+from mcp_zero.proxy.server_manager import ServerManager
+from mcp_zero.transport.config import ServerConfig, TransportType
+from mcp_zero.transport.errors import TransportConnectionError
+
+
+def make_configs():
+    return [
+        ServerConfig(
+            name="weather",
+            transport=TransportType.HTTP,
+            url="http://weather:8080",
+            max_retries=1,
+            retry_delay_seconds=0.01,
+            timeout_seconds=5.0,
+        ),
+        ServerConfig(
+            name="db",
+            transport=TransportType.HTTP,
+            url="http://db:8080",
+        ),
+    ]
+
+
+def make_tool(name="get_weather", description="Get weather"):
+    return Tool(name=name, description=description, inputSchema={"type": "object"})
+
+
+def make_call_result(text="result"):
+    return CallToolResult(
+        content=[TextContent(type="text", text=text)],
+        isError=False,
+    )
+
+
+class TestProxyServerListTools:
+    @pytest.mark.asyncio
+    async def test_aggregates_tools_from_all_servers(self):
+        mgr = ServerManager(make_configs())
+
+        mock_session_w = AsyncMock()
+        mock_session_w.list_tools = AsyncMock(
+            return_value=ListToolsResult(tools=[make_tool("get_weather")])
+        )
+        mock_session_d = AsyncMock()
+        mock_session_d.list_tools = AsyncMock(
+            return_value=ListToolsResult(tools=[make_tool("query")])
+        )
+
+        sessions = {"weather": mock_session_w, "db": mock_session_d}
+
+        async def fake_get_session(name, ctx=None, **kwargs):
+            return sessions[name]
+
+        mgr.get_session = AsyncMock(side_effect=fake_get_session)
+
+        proxy = ProxyServer(mgr)
+        tools = await proxy._list_tools()
+
+        assert len(tools) == 2
+        names = {t.name for t in tools}
+        assert "weather__get_weather" in names
+        assert "db__query" in names
+
+    @pytest.mark.asyncio
+    async def test_skips_failed_server(self):
+        mgr = ServerManager(make_configs())
+
+        mock_session = AsyncMock()
+        mock_session.list_tools = AsyncMock(
+            return_value=ListToolsResult(tools=[make_tool("query")])
+        )
+
+        async def fake_get_session(name, ctx=None, **kwargs):
+            if name == "weather":
+                raise ConnectionError("down")
+            return mock_session
+
+        mgr.get_session = AsyncMock(side_effect=fake_get_session)
+
+        proxy = ProxyServer(mgr)
+        tools = await proxy._list_tools()
+
+        assert len(tools) == 1
+        assert tools[0].name == "db__query"
+
+
+class TestProxyServerCallTool:
+    @pytest.mark.asyncio
+    async def test_routes_to_correct_upstream(self):
+        mgr = ServerManager(make_configs())
+
+        mock_session = AsyncMock()
+        mock_session.call_tool = AsyncMock(return_value=make_call_result("sunny"))
+
+        mgr.get_session = AsyncMock(return_value=mock_session)
+
+        proxy = ProxyServer(mgr)
+        result = await proxy._call_tool("weather__get_weather", {"city": "NYC"})
+
+        assert len(result) == 1
+        assert result[0].text == "sunny"
+        mock_session.call_tool.assert_awaited_once_with("get_weather", {"city": "NYC"})
+
+    @pytest.mark.asyncio
+    async def test_invalid_tool_name_raises(self):
+        mgr = ServerManager(make_configs())
+        proxy = ProxyServer(mgr)
+
+        with pytest.raises(RoutingError):
+            await proxy._call_tool("badname", {})
+
+    @pytest.mark.asyncio
+    async def test_retries_on_connection_error(self):
+        configs = [
+            ServerConfig(
+                name="weather",
+                transport=TransportType.HTTP,
+                url="http://weather:8080",
+                max_retries=1,
+                retry_delay_seconds=0.01,
+                timeout_seconds=5.0,
+            ),
+        ]
+        mgr = ServerManager(configs)
+
+        mock_session = AsyncMock()
+        call_count = {"n": 0}
+
+        async def fake_call_tool(name, args):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                raise TransportConnectionError("conn reset", server_name="weather")
+            return make_call_result("ok")
+
+        mock_session.call_tool = AsyncMock(side_effect=fake_call_tool)
+        mgr.get_session = AsyncMock(return_value=mock_session)
+        mgr.disconnect = AsyncMock()
+
+        proxy = ProxyServer(mgr)
+        result = await proxy._call_tool("weather__get_weather", {})
+
+        assert result[0].text == "ok"
+        assert call_count["n"] == 2
+        mgr.disconnect.assert_awaited_once_with("weather")
+
+    @pytest.mark.asyncio
+    async def test_exhausted_retries_raises_upstream_error(self):
+        configs = [
+            ServerConfig(
+                name="weather",
+                transport=TransportType.HTTP,
+                url="http://weather:8080",
+                max_retries=1,
+                retry_delay_seconds=0.01,
+                timeout_seconds=5.0,
+            ),
+        ]
+        mgr = ServerManager(configs)
+
+        mock_session = AsyncMock()
+        mock_session.call_tool = AsyncMock(
+            side_effect=TransportConnectionError("down", server_name="weather")
+        )
+        mgr.get_session = AsyncMock(return_value=mock_session)
+        mgr.disconnect = AsyncMock()
+
+        proxy = ProxyServer(mgr)
+        with pytest.raises(UpstreamError, match="failed after 2 attempts"):
+            await proxy._call_tool("weather__get_weather", {})
+
+    @pytest.mark.asyncio
+    async def test_timeout_raises_upstream_error(self):
+        configs = [
+            ServerConfig(
+                name="weather",
+                transport=TransportType.HTTP,
+                url="http://weather:8080",
+                max_retries=0,
+                timeout_seconds=0.01,
+            ),
+        ]
+        mgr = ServerManager(configs)
+
+        mock_session = AsyncMock()
+
+        async def slow_call(name, args):
+            await asyncio.sleep(10)
+
+        mock_session.call_tool = AsyncMock(side_effect=slow_call)
+        mgr.get_session = AsyncMock(return_value=mock_session)
+
+        proxy = ProxyServer(mgr)
+        with pytest.raises(UpstreamError, match="failed after 1 attempts"):
+            await proxy._call_tool("weather__get_weather", {})
+
+
+class TestProxyServerWithPipeline:
+    @pytest.mark.asyncio
+    async def test_denied_by_pipeline(self):
+        mgr = ServerManager(make_configs())
+
+        mock_pipeline = AsyncMock(spec=Pipeline)
+        deny_ctx = HookContext(
+            policy_decision=PolicyDecision.DENY,
+            short_circuit_reason="blocked by policy",
+        )
+        mock_pipeline.execute = AsyncMock(
+            return_value=PipelineResult(context=deny_ctx, success=False)
+        )
+
+        proxy = ProxyServer(mgr, pipeline=mock_pipeline)
+        result = await proxy._call_tool("weather__get_weather", {})
+
+        assert len(result) == 1
+        assert "denied" in result[0].text.lower()
+        assert "blocked by policy" in result[0].text
+
+    @pytest.mark.asyncio
+    async def test_pipeline_runs_post_hooks(self):
+        mgr = ServerManager(make_configs())
+
+        mock_session = AsyncMock()
+        mock_session.call_tool = AsyncMock(return_value=make_call_result("ok"))
+        mgr.get_session = AsyncMock(return_value=mock_session)
+
+        allow_ctx = HookContext(policy_decision=PolicyDecision.PENDING)
+        mock_pipeline = AsyncMock(spec=Pipeline)
+        mock_pipeline.execute = AsyncMock(
+            return_value=PipelineResult(context=allow_ctx, success=True)
+        )
+
+        proxy = ProxyServer(mgr, pipeline=mock_pipeline)
+        result = await proxy._call_tool("weather__get_weather", {})
+
+        assert result[0].text == "ok"
+        # execute called twice: pre and post pipeline
+        assert mock_pipeline.execute.await_count == 2
+
+
+class TestProxyServerWithAuth:
+    @pytest.mark.asyncio
+    async def test_injects_auth_token(self):
+        mgr = ServerManager(make_configs())
+
+        mock_session = AsyncMock()
+        mock_session.call_tool = AsyncMock(return_value=make_call_result("authed"))
+        mgr.get_session = AsyncMock(return_value=mock_session)
+
+        mock_auth = AsyncMock(spec=AuthProvider)
+        mock_auth.get_token = AsyncMock(return_value="obo-token-123")
+
+        proxy = ProxyServer(mgr, auth_provider=mock_auth)
+        result = await proxy._call_tool("weather__get_weather", {})
+
+        assert result[0].text == "authed"
+        # Verify auth token was passed to get_session
+        call_kwargs = mgr.get_session.call_args[1]
+        assert call_kwargs["auth_token"] == "obo-token-123"
