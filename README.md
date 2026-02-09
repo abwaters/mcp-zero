@@ -1,1 +1,5 @@
 # mcp-zero
+
+
+## links
+https://modelcontextprotocol.io/specification/draft/basic/authorization
