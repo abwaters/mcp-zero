@@ -54,3 +54,30 @@ class TestServerConfig:
         assert cfg.args == []
         assert cfg.env == {}
         assert cfg.url is None
+
+    def test_lifecycle_defaults(self):
+        cfg = ServerConfig(name="local", transport=TransportType.STDIO, command="python")
+        assert cfg.max_restarts == 3
+        assert cfg.restart_delay == 1.0
+
+    def test_lifecycle_custom_values(self):
+        cfg = ServerConfig(
+            name="local",
+            transport=TransportType.STDIO,
+            command="python",
+            max_restarts=5,
+            restart_delay=2.5,
+        )
+        assert cfg.max_restarts == 5
+        assert cfg.restart_delay == 2.5
+
+    def test_http_config_ignores_lifecycle(self):
+        cfg = ServerConfig(
+            name="remote",
+            transport=TransportType.HTTP,
+            url="http://localhost:8080",
+            max_restarts=10,
+            restart_delay=5.0,
+        )
+        assert cfg.max_restarts == 10
+        assert cfg.restart_delay == 5.0
