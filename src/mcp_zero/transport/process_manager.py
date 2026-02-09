@@ -97,9 +97,7 @@ class StdioProcessManager:
         """Periodically check transport health and restart as needed."""
         while not self._shutdown_event.is_set():
             try:
-                await asyncio.wait_for(
-                    self._shutdown_event.wait(), timeout=self._health_interval
-                )
+                await asyncio.wait_for(self._shutdown_event.wait(), timeout=self._health_interval)
                 break  # shutdown signalled
             except asyncio.TimeoutError:
                 pass  # interval elapsed, run checks
@@ -125,7 +123,7 @@ class StdioProcessManager:
             return
 
         status.restart_in_progress = True
-        delay = min(base_delay * (2 ** status.consecutive_failures), _MAX_BACKOFF)
+        delay = min(base_delay * (2**status.consecutive_failures), _MAX_BACKOFF)
         logger.info(
             "Restarting '%s' (attempt %d/%d, delay %.1fs)",
             name,
@@ -172,9 +170,7 @@ class StdioProcessManager:
             except Exception:
                 logger.exception("Error disconnecting '%s' during shutdown", name)
 
-        await asyncio.gather(
-            *(_safe_disconnect(n, s) for n, s in self._transports.items())
-        )
+        await asyncio.gather(*(_safe_disconnect(n, s) for n, s in self._transports.items()))
 
     # -- Signal handling --
 
