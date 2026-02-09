@@ -38,6 +38,26 @@ class TestErrorHierarchy:
         err = ProcessError("not found", server_name="local-tool")
         assert err.server_name == "local-tool"
 
+    def test_correlation_id_default(self):
+        err = TransportError("fail")
+        assert err.correlation_id == ""
+
+    def test_correlation_id_stored(self):
+        err = TransportError("fail", correlation_id="abc-123")
+        assert err.correlation_id == "abc-123"
+
+    def test_subclasses_accept_correlation_id(self):
+        for cls in (
+            TransportConnectionError,
+            TransportTimeoutError,
+            SessionError,
+            TransportClosedError,
+            ProcessError,
+        ):
+            err = cls("msg", server_name="s", correlation_id="cid-1")
+            assert err.correlation_id == "cid-1"
+            assert err.server_name == "s"
+
     def test_catchable_as_base(self):
         try:
             raise TransportConnectionError("refused", server_name="x")

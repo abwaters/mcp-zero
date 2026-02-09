@@ -26,13 +26,18 @@ class StdioTransport(MCPTransport):
         if self._state == TransportState.CONNECTED:
             return
 
+        cid = context.correlation_id if context else ""
         self._state = TransportState.CONNECTING
         try:
             env = dict(self._config.env) if self._config.env else None
             if context and env is not None:
                 env["MCP_CORRELATION_ID"] = context.correlation_id
+                env["MCP_TRACE_ID"] = context.trace_id
             elif context:
-                env = {"MCP_CORRELATION_ID": context.correlation_id}
+                env = {
+                    "MCP_CORRELATION_ID": context.correlation_id,
+                    "MCP_TRACE_ID": context.trace_id,
+                }
 
             params = StdioServerParameters(
                 command=self._config.command,  # type: ignore[arg-type]
@@ -53,6 +58,7 @@ class StdioTransport(MCPTransport):
             raise ProcessError(
                 f"Failed to spawn '{self._config.command}' for '{self._config.name}': {exc}",
                 server_name=self._config.name,
+                correlation_id=cid,
             ) from exc
         except (TransportConnectionError, ProcessError):
             self._state = TransportState.ERROR
@@ -62,12 +68,14 @@ class StdioTransport(MCPTransport):
             raise TransportConnectionError(
                 f"Failed to connect to '{self._config.name}': {exc}",
                 server_name=self._config.name,
+                correlation_id=cid,
             ) from exc
         except Exception as exc:
             self._state = TransportState.ERROR
             raise SessionError(
                 f"Session error for '{self._config.name}': {exc}",
                 server_name=self._config.name,
+                correlation_id=cid,
             ) from exc
 
     async def disconnect(self) -> None:

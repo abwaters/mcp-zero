@@ -13,13 +13,29 @@ from typing import Any
 class RequestContext:
     """Per-request context carrying correlation ID and user identity.
 
-    Stories #11/#12 will extend this with full identity propagation.
+    Each request gets a unique ``correlation_id``.  A ``trace_id`` groups
+    parent-child calls together — it defaults to the ``correlation_id`` of the
+    root request and is inherited by child contexts.
     """
 
     correlation_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    trace_id: str = ""
     user_id: str | None = None
     user_email: str | None = None
     user_groups: list[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if not self.trace_id:
+            object.__setattr__(self, "trace_id", self.correlation_id)
+
+    def child_context(self) -> RequestContext:
+        """Create a child context with a new correlation ID but the same trace."""
+        return RequestContext(
+            trace_id=self.trace_id,
+            user_id=self.user_id,
+            user_email=self.user_email,
+            user_groups=list(self.user_groups),
+        )
 
 
 class PolicyDecision(StrEnum):

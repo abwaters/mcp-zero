@@ -6,8 +6,9 @@ from __future__ import annotations
 class TransportError(Exception):
     """Base error for all transport operations."""
 
-    def __init__(self, message: str, *, server_name: str = "") -> None:
+    def __init__(self, message: str, *, server_name: str = "", correlation_id: str = "") -> None:
         self.server_name = server_name
+        self.correlation_id = correlation_id
         super().__init__(message)
 
 

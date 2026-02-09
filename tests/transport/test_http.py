@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from mcp_zero.context import RequestContext
 from mcp_zero.transport.base import TransportState
 from mcp_zero.transport.config import ServerConfig, TransportType
 from mcp_zero.transport.errors import SessionError, TransportClosedError, TransportConnectionError
@@ -63,7 +64,7 @@ class TestStreamableHTTPTransport:
 
         assert t.state == TransportState.CONNECTED
         assert t.session is mock_sdk["session"]
-        mock_sdk["client"].assert_called_once_with(cfg.url)
+        mock_sdk["client"].assert_called_once_with(cfg.url, http_client=None)
         mock_sdk["session"].initialize.assert_awaited_once()
 
     @pytest.mark.asyncio
@@ -115,6 +116,48 @@ class TestStreamableHTTPTransport:
         with pytest.raises(SessionError, match="protocol mismatch"):
             await t.connect()
         assert t.state == TransportState.ERROR
+
+    @pytest.mark.asyncio
+    async def test_connect_with_context_passes_http_client(self, mock_sdk):
+        cfg = make_http_config()
+        ctx = RequestContext(correlation_id="c-1", trace_id="t-1")
+        t = StreamableHTTPTransport(cfg)
+
+        with patch("mcp_zero.transport.http.httpx.AsyncClient") as mock_httpx:
+            mock_httpx_inst = AsyncMock()
+            mock_httpx_inst.__aenter__ = AsyncMock(return_value=mock_httpx_inst)
+            mock_httpx_inst.__aexit__ = AsyncMock(return_value=False)
+            mock_httpx.return_value = mock_httpx_inst
+
+            await t.connect(context=ctx)
+
+            mock_httpx.assert_called_once_with(
+                headers={"X-Correlation-ID": "c-1", "X-Trace-ID": "t-1"}
+            )
+            # httpx client instance passed to streamable_http_client
+            call_kwargs = mock_sdk["client"].call_args[1]
+            assert call_kwargs["http_client"] is mock_httpx_inst
+
+    @pytest.mark.asyncio
+    async def test_connect_without_context_no_http_client(self, mock_sdk):
+        cfg = make_http_config()
+        t = StreamableHTTPTransport(cfg)
+
+        await t.connect()
+
+        call_kwargs = mock_sdk["client"].call_args[1]
+        assert call_kwargs["http_client"] is None
+
+    @pytest.mark.asyncio
+    async def test_error_carries_correlation_id(self, mock_sdk):
+        mock_sdk["client"].return_value.__aenter__.side_effect = OSError("refused")
+        cfg = make_http_config()
+        ctx = RequestContext(correlation_id="err-cid")
+        t = StreamableHTTPTransport(cfg)
+
+        with pytest.raises(TransportConnectionError) as exc_info:
+            await t.connect(context=ctx)
+        assert exc_info.value.correlation_id == "err-cid"
 
     @pytest.mark.asyncio
     async def test_context_manager(self, mock_sdk):

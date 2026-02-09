@@ -91,9 +91,20 @@ class TestStdioTransport:
         assert call_args.env["MCP_CORRELATION_ID"] == "test-123"
 
     @pytest.mark.asyncio
+    async def test_connect_injects_trace_id(self, mock_sdk):
+        cfg = make_stdio_config()
+        ctx = RequestContext(correlation_id="c-1", trace_id="t-1")
+        t = StdioTransport(cfg)
+
+        await t.connect(context=ctx)
+
+        call_args = mock_sdk["client"].call_args[0][0]
+        assert call_args.env["MCP_TRACE_ID"] == "t-1"
+
+    @pytest.mark.asyncio
     async def test_connect_merges_env_with_correlation(self, mock_sdk):
         cfg = make_stdio_config(env={"EXISTING": "value"})
-        ctx = RequestContext(correlation_id="corr-456")
+        ctx = RequestContext(correlation_id="corr-456", trace_id="trace-789")
         t = StdioTransport(cfg)
 
         await t.connect(context=ctx)
@@ -101,6 +112,7 @@ class TestStdioTransport:
         call_args = mock_sdk["client"].call_args[0][0]
         assert call_args.env["EXISTING"] == "value"
         assert call_args.env["MCP_CORRELATION_ID"] == "corr-456"
+        assert call_args.env["MCP_TRACE_ID"] == "trace-789"
 
     @pytest.mark.asyncio
     async def test_connect_idempotent(self, mock_sdk):
@@ -160,6 +172,17 @@ class TestStdioTransport:
         with pytest.raises(SessionError, match="bad handshake"):
             await t.connect()
         assert t.state == TransportState.ERROR
+
+    @pytest.mark.asyncio
+    async def test_error_carries_correlation_id(self, mock_sdk):
+        mock_sdk["client"].return_value.__aenter__.side_effect = FileNotFoundError("gone")
+        cfg = make_stdio_config()
+        ctx = RequestContext(correlation_id="err-cid")
+        t = StdioTransport(cfg)
+
+        with pytest.raises(ProcessError) as exc_info:
+            await t.connect(context=ctx)
+        assert exc_info.value.correlation_id == "err-cid"
 
     @pytest.mark.asyncio
     async def test_context_manager(self, mock_sdk):
