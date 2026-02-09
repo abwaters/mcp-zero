@@ -1,0 +1,20 @@
+.claude/settings.local.json
+.idea
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+dist/
+build/
+.venv/
+*.so
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Environment
+.env
