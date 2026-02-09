@@ -81,3 +81,22 @@ class TestServerConfig:
         )
         assert cfg.max_restarts == 10
         assert cfg.restart_delay == 5.0
+
+    def test_timeout_retry_defaults(self):
+        cfg = ServerConfig(name="remote", transport=TransportType.HTTP, url="http://localhost:8080")
+        assert cfg.timeout_seconds == 30.0
+        assert cfg.max_retries == 2
+        assert cfg.retry_delay_seconds == 1.0
+
+    def test_timeout_retry_custom(self):
+        cfg = ServerConfig(
+            name="remote",
+            transport=TransportType.HTTP,
+            url="http://localhost:8080",
+            timeout_seconds=60.0,
+            max_retries=5,
+            retry_delay_seconds=2.0,
+        )
+        assert cfg.timeout_seconds == 60.0
+        assert cfg.max_retries == 5
+        assert cfg.retry_delay_seconds == 2.0

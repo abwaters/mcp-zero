@@ -57,7 +57,9 @@ class MCPTransport(ABC):
         return self._session
 
     @abstractmethod
-    async def connect(self, context: RequestContext | None = None) -> None:
+    async def connect(
+        self, context: RequestContext | None = None, *, auth_token: str | None = None
+    ) -> None:
         """Establish connection and initialize the MCP session."""
 
     @abstractmethod
