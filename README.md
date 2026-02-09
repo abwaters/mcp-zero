@@ -1,1 +1,1 @@
-"# mcp-zero" 
+# mcp-zero
