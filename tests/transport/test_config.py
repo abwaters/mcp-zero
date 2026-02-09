@@ -1,0 +1,56 @@
+"""Tests for transport configuration."""
+
+import pytest
+
+from mcp_zero.transport.config import ServerConfig, TransportType
+
+
+class TestTransportType:
+    def test_http_value(self):
+        assert TransportType.HTTP == "http"
+
+    def test_stdio_value(self):
+        assert TransportType.STDIO == "stdio"
+
+    def test_from_string(self):
+        assert TransportType("http") is TransportType.HTTP
+        assert TransportType("stdio") is TransportType.STDIO
+
+
+class TestServerConfig:
+    def test_http_config_valid(self):
+        cfg = ServerConfig(name="remote", transport=TransportType.HTTP, url="http://localhost:8080")
+        assert cfg.name == "remote"
+        assert cfg.transport == TransportType.HTTP
+        assert cfg.url == "http://localhost:8080"
+
+    def test_http_config_missing_url(self):
+        with pytest.raises(ValueError, match="requires 'url'"):
+            ServerConfig(name="remote", transport=TransportType.HTTP)
+
+    def test_stdio_config_valid(self):
+        cfg = ServerConfig(
+            name="local",
+            transport=TransportType.STDIO,
+            command="node",
+            args=["server.js"],
+            env={"DEBUG": "1"},
+        )
+        assert cfg.command == "node"
+        assert cfg.args == ["server.js"]
+        assert cfg.env == {"DEBUG": "1"}
+
+    def test_stdio_config_missing_command(self):
+        with pytest.raises(ValueError, match="requires 'command'"):
+            ServerConfig(name="local", transport=TransportType.STDIO)
+
+    def test_frozen(self):
+        cfg = ServerConfig(name="remote", transport=TransportType.HTTP, url="http://localhost:8080")
+        with pytest.raises(AttributeError):
+            cfg.name = "other"  # type: ignore[misc]
+
+    def test_defaults(self):
+        cfg = ServerConfig(name="local", transport=TransportType.STDIO, command="python")
+        assert cfg.args == []
+        assert cfg.env == {}
+        assert cfg.url is None
