@@ -41,12 +41,8 @@ class StdioTransport(MCPTransport):
             )
 
             stack = AsyncExitStack()
-            read_stream, write_stream = await stack.enter_async_context(
-                stdio_client(params)
-            )
-            session = await stack.enter_async_context(
-                ClientSession(read_stream, write_stream)
-            )
+            read_stream, write_stream = await stack.enter_async_context(stdio_client(params))
+            session = await stack.enter_async_context(ClientSession(read_stream, write_stream))
             await session.initialize()
 
             self._exit_stack = stack

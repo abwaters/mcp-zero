@@ -40,9 +40,7 @@ class TestTransportFactory:
         original = dict(TransportFactory._registry)
         try:
             TransportFactory.register(TransportType.HTTP, CustomTransport)
-            cfg = ServerConfig(
-                name="custom", transport=TransportType.HTTP, url="http://localhost"
-            )
+            cfg = ServerConfig(name="custom", transport=TransportType.HTTP, url="http://localhost")
             transport = TransportFactory.create(cfg)
             assert isinstance(transport, CustomTransport)
         finally:

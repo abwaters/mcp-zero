@@ -32,9 +32,7 @@ class StreamableHTTPTransport(MCPTransport):
             read_stream, write_stream, _ = await stack.enter_async_context(
                 streamable_http_client(self._config.url)  # type: ignore[arg-type]
             )
-            session = await stack.enter_async_context(
-                ClientSession(read_stream, write_stream)
-            )
+            session = await stack.enter_async_context(ClientSession(read_stream, write_stream))
             await session.initialize()
 
             self._exit_stack = stack
