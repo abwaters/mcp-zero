@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contextlib import AsyncExitStack
 
+import httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
@@ -26,11 +27,28 @@ class StreamableHTTPTransport(MCPTransport):
         if self._state == TransportState.CONNECTED:
             return
 
+        cid = context.correlation_id if context else ""
         self._state = TransportState.CONNECTING
         try:
             stack = AsyncExitStack()
+
+            # Inject correlation / trace headers when a context is available.
+            http_client: httpx.AsyncClient | None = None
+            if context:
+                http_client = await stack.enter_async_context(
+                    httpx.AsyncClient(
+                        headers={
+                            "X-Correlation-ID": context.correlation_id,
+                            "X-Trace-ID": context.trace_id,
+                        }
+                    )
+                )
+
             read_stream, write_stream, _ = await stack.enter_async_context(
-                streamable_http_client(self._config.url)  # type: ignore[arg-type]
+                streamable_http_client(
+                    self._config.url,  # type: ignore[arg-type]
+                    http_client=http_client,
+                )
             )
             session = await stack.enter_async_context(ClientSession(read_stream, write_stream))
             await session.initialize()
@@ -46,12 +64,14 @@ class StreamableHTTPTransport(MCPTransport):
             raise TransportConnectionError(
                 f"Failed to connect to '{self._config.name}' at {self._config.url}: {exc}",
                 server_name=self._config.name,
+                correlation_id=cid,
             ) from exc
         except Exception as exc:
             self._state = TransportState.ERROR
             raise SessionError(
                 f"Session error for '{self._config.name}': {exc}",
                 server_name=self._config.name,
+                correlation_id=cid,
             ) from exc
 
     async def disconnect(self) -> None:
