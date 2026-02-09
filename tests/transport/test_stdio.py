@@ -190,3 +190,83 @@ class TestStdioTransport:
         async with StdioTransport(cfg) as t:
             assert t.state == TransportState.CONNECTED
         assert t.state == TransportState.DISCONNECTED
+
+
+class TestStdioTransportHealth:
+    @pytest.mark.asyncio
+    async def test_healthy_when_connected(self, mock_sdk):
+        cfg = make_stdio_config()
+        t = StdioTransport(cfg)
+        await t.connect()
+        assert t.is_healthy() is True
+
+    def test_unhealthy_when_disconnected(self):
+        cfg = make_stdio_config()
+        t = StdioTransport(cfg)
+        assert t.is_healthy() is False
+
+    @pytest.mark.asyncio
+    async def test_unhealthy_after_disconnect(self, mock_sdk):
+        cfg = make_stdio_config()
+        t = StdioTransport(cfg)
+        await t.connect()
+        await t.disconnect()
+        assert t.is_healthy() is False
+
+    @pytest.mark.asyncio
+    async def test_unhealthy_in_error_state(self, mock_sdk):
+        mock_sdk["session"].initialize.side_effect = RuntimeError("fail")
+        cfg = make_stdio_config()
+        t = StdioTransport(cfg)
+        with pytest.raises(Exception):
+            await t.connect()
+        assert t.state == TransportState.ERROR
+        assert t.is_healthy() is False
+
+    @pytest.mark.asyncio
+    async def test_reconnect_success(self, mock_sdk):
+        cfg = make_stdio_config()
+        t = StdioTransport(cfg)
+        await t.connect()
+        assert t.is_healthy() is True
+
+        await t.reconnect()
+        assert t.is_healthy() is True
+        assert t.state == TransportState.CONNECTED
+
+    @pytest.mark.asyncio
+    async def test_reconnect_reuses_stored_context(self, mock_sdk):
+        cfg = make_stdio_config()
+        ctx = RequestContext(correlation_id="stored-ctx")
+        t = StdioTransport(cfg)
+        await t.connect(context=ctx)
+
+        await t.reconnect()
+
+        # Second connect call should use stored context
+        call_args = mock_sdk["client"].call_args[0][0]
+        assert call_args.env["MCP_CORRELATION_ID"] == "stored-ctx"
+
+    @pytest.mark.asyncio
+    async def test_reconnect_with_new_context(self, mock_sdk):
+        cfg = make_stdio_config()
+        ctx1 = RequestContext(correlation_id="old-ctx")
+        ctx2 = RequestContext(correlation_id="new-ctx")
+        t = StdioTransport(cfg)
+        await t.connect(context=ctx1)
+
+        await t.reconnect(context=ctx2)
+
+        call_args = mock_sdk["client"].call_args[0][0]
+        assert call_args.env["MCP_CORRELATION_ID"] == "new-ctx"
+
+    @pytest.mark.asyncio
+    async def test_reconnect_from_error_state(self, mock_sdk):
+        cfg = make_stdio_config()
+        t = StdioTransport(cfg)
+        await t.connect()
+
+        # Force error state
+        t._state = TransportState.ERROR
+        await t.reconnect()
+        assert t.is_healthy() is True

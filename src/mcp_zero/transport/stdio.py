@@ -15,17 +15,21 @@ from mcp_zero.transport.errors import ProcessError, SessionError, TransportConne
 class StdioTransport(MCPTransport):
     """Wraps the MCP SDK's ``stdio_client`` context manager.
 
-    Story #9 will add health monitoring and restart logic.
+    Provides health checking and reconnection support for the
+    ``StdioProcessManager`` lifecycle layer.
     """
 
     def __init__(self, *args: object, **kwargs: object) -> None:
         super().__init__(*args, **kwargs)  # type: ignore[arg-type]
         self._exit_stack: AsyncExitStack | None = None
+        self._last_context: RequestContext | None = None
 
     async def connect(self, context: RequestContext | None = None) -> None:
         if self._state == TransportState.CONNECTED:
             return
 
+        if context is not None:
+            self._last_context = context
         cid = context.correlation_id if context else ""
         self._state = TransportState.CONNECTING
         try:
@@ -92,3 +96,12 @@ class StdioTransport(MCPTransport):
         except Exception:
             self._state = TransportState.ERROR
             raise
+
+    def is_healthy(self) -> bool:
+        """Fast state check — no I/O."""
+        return self._state == TransportState.CONNECTED and self._session is not None
+
+    async def reconnect(self, context: RequestContext | None = None) -> None:
+        """Disconnect then connect, reusing the stored context if none is provided."""
+        await self.disconnect()
+        await self.connect(context=context or self._last_context)

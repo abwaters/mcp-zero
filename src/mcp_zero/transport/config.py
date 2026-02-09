@@ -28,6 +28,10 @@ class ServerConfig:
     args: list[str] = field(default_factory=list)
     env: dict[str, str] = field(default_factory=dict)
 
+    # Process lifecycle (stdio only)
+    max_restarts: int = 3
+    restart_delay: float = 1.0  # seconds, base for exponential backoff
+
     def __post_init__(self) -> None:
         if self.transport == TransportType.HTTP:
             if not self.url:
