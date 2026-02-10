@@ -402,9 +402,7 @@ class TestMaskingHookFailClosed:
         engine.mask_text.side_effect = _fail_on_second
 
         hook = MaskingHook(engine, _make_config())
-        ctx = _make_ctx(
-            payload={"safe": "hello", "nested": {"dangerous": "trigger error"}}
-        )
+        ctx = _make_ctx(payload={"safe": "hello", "nested": {"dangerous": "trigger error"}})
 
         with pytest.raises(ShortCircuitError) as exc_info:
             await hook.on_pre_masking(ctx)
