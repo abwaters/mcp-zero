@@ -17,6 +17,7 @@ from mcp_zero.governance.loader import (
 )
 from mcp_zero.identity import IdentityConfig, IdentityHook, JWKSClient, JWTValidator
 from mcp_zero.identity.obo import OBOClient, OBOConfig
+from mcp_zero.logging import configure_json_logging
 from mcp_zero.masking import MaskingHook, PresidioMaskingEngine
 from mcp_zero.pipeline import HookRegistry, Pipeline
 from mcp_zero.proxy.app import create_app
@@ -190,12 +191,13 @@ def _build_obo_provider(configs: list[ServerConfig]) -> AuthProvider | None:
 
 def run() -> None:
     """Start the MCP gateway."""
-    logging.basicConfig(
-        level=os.environ.get("LOG_LEVEL", "INFO").upper(),
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
+    configure_json_logging(level=os.environ.get("LOG_LEVEL", "INFO").upper())
 
     configs, identity_config, policy_config = _load_policy_and_configs()
+
+    # If policy specifies a logging level, apply it
+    if policy_config and policy_config.logging:
+        logging.getLogger().setLevel(policy_config.logging.level.upper())
     if not configs:
         logger.info("No upstream servers configured — starting in pass-through mode")
 
