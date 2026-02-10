@@ -7,6 +7,12 @@ import os
 
 import uvicorn
 
+from mcp_zero.governance.errors import GovernanceError
+from mcp_zero.governance.loader import (
+    convert_to_identity_config,
+    convert_to_server_configs,
+    load_policy_file,
+)
 from mcp_zero.identity import IdentityConfig, IdentityHook, JWKSClient, JWTValidator
 from mcp_zero.identity.obo import OBOClient, OBOConfig
 from mcp_zero.pipeline import HookRegistry, Pipeline
@@ -21,10 +27,9 @@ logger = logging.getLogger(__name__)
 
 
 def _load_server_configs() -> list[ServerConfig]:
-    """Load upstream server configs.
+    """Load upstream server configs from ``MCP_UPSTREAM_URL`` env var.
 
-    Currently reads a single ``MCP_UPSTREAM_URL`` env var.
-    Epic 3 will replace this with a YAML/JSON policy file loader.
+    Legacy fallback when no policy file is configured.
     """
     url = os.environ.get("MCP_UPSTREAM_URL")
     if not url:
@@ -38,29 +43,69 @@ def _load_server_configs() -> list[ServerConfig]:
     ]
 
 
-def _build_identity_pipeline() -> Pipeline | None:
-    """Build a Pipeline with the IdentityHook when Okta env vars are set."""
-    issuer = os.environ.get("OKTA_ISSUER", "")
-    audience = os.environ.get("OKTA_AUDIENCE", "")
+def _load_policy_and_configs() -> tuple[list[ServerConfig], IdentityConfig | None]:
+    """Load server configs and identity config from policy file or env vars.
 
-    if not issuer:
-        logger.info("OKTA_ISSUER not set — identity validation disabled")
-        return None
+    Reads ``MCP_POLICY_FILE`` env var for the policy file path.
+    If not set, falls back to legacy ``MCP_UPSTREAM_URL`` behavior.
 
-    if not audience:
-        logger.warning("OKTA_ISSUER set but OKTA_AUDIENCE missing — identity validation disabled")
-        return None
+    Returns:
+        A tuple of (server_configs, identity_config). identity_config is None
+        when no identity section is in the policy or when using legacy env vars.
 
-    config = IdentityConfig(issuer=issuer, audience=audience)
-    jwks_client = JWKSClient(config)
-    validator = JWTValidator(config, jwks_client)
+    Raises:
+        GovernanceError: If the policy file is invalid (fail-fast at startup).
+    """
+    policy_file = os.environ.get("MCP_POLICY_FILE")
+
+    if not policy_file:
+        logger.info("MCP_POLICY_FILE not set — using legacy env var configuration")
+        return _load_server_configs(), None
+
+    try:
+        policy = load_policy_file(policy_file)
+    except GovernanceError:
+        logger.error("Failed to load policy file: %s", policy_file)
+        raise
+
+    configs = convert_to_server_configs(policy)
+    identity_config = convert_to_identity_config(policy)
+    return configs, identity_config
+
+
+def _build_identity_pipeline(
+    identity_config: IdentityConfig | None = None,
+) -> Pipeline | None:
+    """Build a Pipeline with the IdentityHook.
+
+    If *identity_config* is provided (from a policy file), it is used directly.
+    Otherwise falls back to ``OKTA_ISSUER`` / ``OKTA_AUDIENCE`` env vars.
+    """
+    if identity_config is None:
+        issuer = os.environ.get("OKTA_ISSUER", "")
+        audience = os.environ.get("OKTA_AUDIENCE", "")
+
+        if not issuer:
+            logger.info("OKTA_ISSUER not set — identity validation disabled")
+            return None
+
+        if not audience:
+            logger.warning(
+                "OKTA_ISSUER set but OKTA_AUDIENCE missing — identity validation disabled"
+            )
+            return None
+
+        identity_config = IdentityConfig(issuer=issuer, audience=audience)
+
+    jwks_client = JWKSClient(identity_config)
+    validator = JWTValidator(identity_config, jwks_client)
     hook = IdentityHook(validator)
 
     registry = HookRegistry()
     registry.register(hook, priority=10)
     registry.build()
 
-    logger.info("Identity validation enabled (issuer=%s)", issuer)
+    logger.info("Identity validation enabled (issuer=%s)", identity_config.issuer)
     return Pipeline(registry)
 
 
@@ -120,12 +165,12 @@ def run() -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
 
-    configs = _load_server_configs()
+    configs, identity_config = _load_policy_and_configs()
     if not configs:
         logger.info("No upstream servers configured — starting in pass-through mode")
 
-    # Build identity pipeline when Okta is configured
-    pipeline = _build_identity_pipeline()
+    # Build identity pipeline (from policy file or env vars)
+    pipeline = _build_identity_pipeline(identity_config)
 
     # Build OBO auth provider when Okta OBO env vars are set
     auth_provider = _build_obo_provider(configs)
