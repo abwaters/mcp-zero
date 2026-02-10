@@ -7,7 +7,7 @@ from typing import Any
 
 from mcp_zero.context import HookContext
 from mcp_zero.governance.config import PresidioConfig
-from mcp_zero.masking.engine import MaskingEngine
+from mcp_zero.masking.engine import MaskingEngine, MaskingEvent
 from mcp_zero.masking.errors import MaskingEngineError
 from mcp_zero.pipeline.errors import ShortCircuitError
 from mcp_zero.pipeline.hooks import LifecycleHook
@@ -18,8 +18,11 @@ logger = logging.getLogger(__name__)
 class MaskingHook(LifecycleHook):
     """Masks PII and secrets in request and response payloads.
 
-    Input masking (PRE_MASKING): walks top-level text fields in
-    ``request_payload`` and applies the configured :class:`MaskingEngine`.
+    Input masking (PRE_MASKING): recursively walks the ``request_payload``
+    structure and applies the configured :class:`MaskingEngine` to every
+    string value found.  Dict keys, numbers, booleans, and ``None`` values
+    pass through unchanged.  On engine failure the request is **denied**
+    (fail-closed) so the upstream MCP server is never contacted.
 
     Output masking (POST_MASKING): recursively walks ``response_payload``
     to find and mask all string values in nested structures.  On engine
@@ -49,45 +52,34 @@ class MaskingHook(LifecycleHook):
             return ctx
 
         masked_fields: list[str] = []
-        new_payload = dict(payload)
+        all_events: list[MaskingEvent] = []
 
-        for key, value in payload.items():
-            if not isinstance(value, str):
-                continue
-
-            try:
-                result = await self._engine.mask_text(
-                    text=value,
-                    entities=self._config.entities,
-                    direction="request",
-                )
-            except MaskingEngineError:
-                logger.error(
-                    "Masking engine error on field '%s' (correlation_id=%s)",
-                    key,
-                    correlation_id,
-                    exc_info=True,
-                )
-                continue
-
-            if result.has_masked:
-                new_payload[key] = result.masked_text
-                masked_fields.append(key)
-
-                for event in result.events:
-                    logger.info(
-                        "Masked %d %s entity(ies) in field '%s' (correlation_id=%s)",
-                        event.count,
-                        event.entity_type,
-                        key,
-                        correlation_id,
-                    )
+        try:
+            new_payload = await self._walk_and_mask(
+                payload,
+                self._config.entities,
+                correlation_id,
+                masked_fields,
+                all_events,
+                path="",
+            )
+        except MaskingEngineError as exc:
+            logger.error(
+                "Masking engine failure — denying request (correlation_id=%s): %s",
+                correlation_id,
+                exc,
+            )
+            raise ShortCircuitError(
+                f"Masking failure: {exc}",
+                deny=True,
+            ) from exc
 
         if masked_fields:
             return ctx.evolve(
                 request_payload=new_payload,
                 masking_applied=True,
                 masked_fields=masked_fields,
+                masking_events=all_events,
             )
 
         return ctx
@@ -141,6 +133,70 @@ class MaskingHook(LifecycleHook):
             )
 
         return ctx
+
+    # ------------------------------------------------------------------
+    # Recursive walkers
+    # ------------------------------------------------------------------
+
+    async def _walk_and_mask(
+        self,
+        obj: Any,
+        entities: list[str],
+        correlation_id: str,
+        masked_fields: list[str],
+        all_events: list[MaskingEvent],
+        path: str,
+    ) -> Any:
+        """Recursively walk *obj* and mask every string value found.
+
+        - ``dict`` — recurse into values; keys are preserved untouched.
+        - ``list`` — recurse into each item.
+        - ``str``  — run through the masking engine.
+        - Everything else (int, float, bool, None) — returned as-is.
+        """
+        if isinstance(obj, str):
+            result = await self._engine.mask_text(
+                text=obj,
+                entities=entities,
+                direction="request",
+            )
+            if result.has_masked:
+                field_path = path or "<root>"
+                masked_fields.append(field_path)
+                all_events.extend(result.events)
+                for event in result.events:
+                    logger.info(
+                        "Masked %d %s entity(ies) in field '%s' (correlation_id=%s)",
+                        event.count,
+                        event.entity_type,
+                        field_path,
+                        correlation_id,
+                    )
+                return result.masked_text
+            return obj
+
+        if isinstance(obj, dict):
+            new_dict: dict[str, Any] = {}
+            for key, value in obj.items():
+                child_path = f"{path}.{key}" if path else key
+                new_dict[key] = await self._walk_and_mask(
+                    value, entities, correlation_id, masked_fields, all_events, child_path
+                )
+            return new_dict
+
+        if isinstance(obj, list):
+            new_list: list[Any] = []
+            for i, item in enumerate(obj):
+                child_path = f"{path}[{i}]"
+                new_list.append(
+                    await self._walk_and_mask(
+                        item, entities, correlation_id, masked_fields, all_events, child_path
+                    )
+                )
+            return new_list
+
+        # Non-string, non-container values pass through unchanged
+        return obj
 
     async def _mask_recursive(
         self,
