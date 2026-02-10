@@ -123,9 +123,7 @@ class TestAuditHookNormalFlow:
         hook = AuditHook()
         ctx = _make_ctx(
             request=RequestContext(
-                identity=UserIdentity(
-                    user_id="u1", groups=["admin", "dev"]
-                ),
+                identity=UserIdentity(user_id="u1", groups=["admin", "dev"]),
             ),
         )
         await hook.on_pre_audit(ctx)
