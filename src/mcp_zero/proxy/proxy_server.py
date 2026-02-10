@@ -133,14 +133,35 @@ class ProxyServer:
                     timeout=config.timeout_seconds,
                 )
 
-                # Run post-pipeline (audit hooks)
+                # Run post-pipeline (output masking + audit hooks)
                 if self._pipeline:
                     response_payload = {
                         "content": [c.model_dump() for c in upstream_result.content],
                         "isError": upstream_result.isError,
                     }
                     post_ctx = hook_ctx.evolve(response_payload=response_payload)
-                    await self._pipeline.execute(post_ctx)
+                    post_result = await self._pipeline.execute(post_ctx)
+
+                    if not post_result.success:
+                        # Fail-closed: never return unmasked data to client
+                        cid = context.correlation_id
+                        logger.warning(
+                            "Output masking failed — blocking response "
+                            "(correlation_id=%s, server=%s, tool=%s)",
+                            cid,
+                            server_name,
+                            tool_name,
+                        )
+                        return [
+                            types.TextContent(
+                                type="text",
+                                text=f"Response blocked: output processing failed "
+                                f"(correlation_id={cid})",
+                            )
+                        ]
+
+                    # Rebuild content from the (potentially masked) payload
+                    return _rebuild_content(post_result.context.response_payload)
 
                 return list(upstream_result.content)
 
@@ -173,3 +194,22 @@ class ProxyServer:
             server_name=server_name,
             correlation_id=context.correlation_id,
         )
+
+
+def _rebuild_content(
+    payload: dict[str, Any],
+) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
+    """Reconstruct MCP content objects from a (potentially masked) response payload."""
+    content_items: list[types.TextContent | types.ImageContent | types.EmbeddedResource] = []
+    for item in payload.get("content", []):
+        item_type = item.get("type")
+        if item_type == "text":
+            content_items.append(types.TextContent.model_validate(item))
+        elif item_type == "image":
+            content_items.append(types.ImageContent.model_validate(item))
+        elif item_type == "resource":
+            content_items.append(types.EmbeddedResource.model_validate(item))
+        else:
+            # Unknown content type — pass through as text fallback
+            content_items.append(types.TextContent(type="text", text=str(item)))
+    return content_items

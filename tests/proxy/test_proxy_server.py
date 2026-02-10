@@ -262,11 +262,12 @@ class TestProxyServerWithPipeline:
         mock_session.call_tool = AsyncMock(return_value=make_call_result("ok"))
         mgr.get_session = AsyncMock(return_value=mock_session)
 
-        allow_ctx = HookContext(policy_decision=PolicyDecision.PENDING)
         mock_pipeline = AsyncMock(spec=Pipeline)
-        mock_pipeline.execute = AsyncMock(
-            return_value=PipelineResult(context=allow_ctx, success=True)
-        )
+
+        async def passthrough_execute(ctx):
+            return PipelineResult(context=ctx, success=True)
+
+        mock_pipeline.execute = AsyncMock(side_effect=passthrough_execute)
 
         proxy = ProxyServer(mgr, pipeline=mock_pipeline)
         result = await proxy._call_tool("weather__get_weather", {})
@@ -274,6 +275,80 @@ class TestProxyServerWithPipeline:
         assert result[0].text == "ok"
         # execute called twice: pre and post pipeline
         assert mock_pipeline.execute.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_post_pipeline_failure_blocks_response(self):
+        """When post-pipeline fails (e.g. output masking error), client gets error."""
+        mgr = ServerManager(make_configs())
+
+        mock_session = AsyncMock()
+        mock_session.call_tool = AsyncMock(return_value=make_call_result("sensitive"))
+        mgr.get_session = AsyncMock(return_value=mock_session)
+
+        call_count = {"n": 0}
+
+        async def execute_side_effect(ctx):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                # Pre-pipeline succeeds
+                return PipelineResult(context=ctx, success=True)
+            # Post-pipeline fails (masking failure)
+            return PipelineResult(
+                context=ctx.evolve(short_circuited=True),
+                success=False,
+            )
+
+        mock_pipeline = AsyncMock(spec=Pipeline)
+        mock_pipeline.execute = AsyncMock(side_effect=execute_side_effect)
+
+        proxy = ProxyServer(mgr, pipeline=mock_pipeline)
+        result = await proxy._call_tool("weather__get_weather", {})
+
+        assert len(result) == 1
+        assert "Response blocked" in result[0].text
+        # Client must NOT receive the original sensitive data
+        assert "sensitive" not in result[0].text
+
+    @pytest.mark.asyncio
+    async def test_post_pipeline_returns_masked_content(self):
+        """Post-pipeline masked response_payload is used to rebuild content."""
+        mgr = ServerManager(make_configs())
+
+        mock_session = AsyncMock()
+        mock_session.call_tool = AsyncMock(
+            return_value=make_call_result("Hello John Doe at john@example.com")
+        )
+        mgr.get_session = AsyncMock(return_value=mock_session)
+
+        call_count = {"n": 0}
+
+        async def execute_side_effect(ctx):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                return PipelineResult(context=ctx, success=True)
+            # Post-pipeline masks the response
+            masked_payload = {
+                "content": [
+                    {"type": "text", "text": "Hello <PERSON> at <EMAIL_ADDRESS>"}
+                ],
+                "isError": False,
+            }
+            return PipelineResult(
+                context=ctx.evolve(
+                    response_payload=masked_payload,
+                    output_masking_applied=True,
+                ),
+                success=True,
+            )
+
+        mock_pipeline = AsyncMock(spec=Pipeline)
+        mock_pipeline.execute = AsyncMock(side_effect=execute_side_effect)
+
+        proxy = ProxyServer(mgr, pipeline=mock_pipeline)
+        result = await proxy._call_tool("weather__get_weather", {})
+
+        assert len(result) == 1
+        assert result[0].text == "Hello <PERSON> at <EMAIL_ADDRESS>"
 
 
 class TestProxyServerWithAuth:
