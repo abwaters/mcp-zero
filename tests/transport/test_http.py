@@ -140,6 +140,24 @@ class TestStreamableHTTPTransport:
             assert sdk_call_kwargs["http_client"] is mock_httpx_inst
 
     @pytest.mark.asyncio
+    async def test_connect_with_context_no_trace_id_omits_header(self, mock_sdk):
+        cfg = make_http_config()
+        ctx = RequestContext(correlation_id="c-1")  # trace_id defaults to None
+        t = StreamableHTTPTransport(cfg)
+
+        with patch("mcp_zero.transport.http.httpx.AsyncClient") as mock_httpx:
+            mock_httpx_inst = AsyncMock()
+            mock_httpx_inst.__aenter__ = AsyncMock(return_value=mock_httpx_inst)
+            mock_httpx_inst.__aexit__ = AsyncMock(return_value=False)
+            mock_httpx.return_value = mock_httpx_inst
+
+            await t.connect(context=ctx)
+
+            call_kwargs = mock_httpx.call_args[1]
+            assert call_kwargs["headers"]["X-Correlation-ID"] == "c-1"
+            assert "X-Trace-ID" not in call_kwargs["headers"]
+
+    @pytest.mark.asyncio
     async def test_connect_without_context_no_http_client(self, mock_sdk):
         cfg = make_http_config()
         t = StreamableHTTPTransport(cfg)

@@ -90,7 +90,7 @@ class TestAuditEvent:
         event = AuditEvent(event_type=AuditEventType.TOOL_INVOCATION)
         assert event.event_type == AuditEventType.TOOL_INVOCATION
         assert event.correlation_id == ""
-        assert event.trace_id == ""
+        assert event.trace_id is None
         assert event.user_id == ""
         assert event.user_groups == []
         assert event.server_name == ""

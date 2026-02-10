@@ -38,12 +38,12 @@ class StdioTransport(MCPTransport):
             env = dict(self._config.env) if self._config.env else None
             if context and env is not None:
                 env["MCP_CORRELATION_ID"] = context.correlation_id
-                env["MCP_TRACE_ID"] = context.trace_id
+                if context.trace_id is not None:
+                    env["MCP_TRACE_ID"] = context.trace_id
             elif context:
-                env = {
-                    "MCP_CORRELATION_ID": context.correlation_id,
-                    "MCP_TRACE_ID": context.trace_id,
-                }
+                env = {"MCP_CORRELATION_ID": context.correlation_id}
+                if context.trace_id is not None:
+                    env["MCP_TRACE_ID"] = context.trace_id
 
             params = StdioServerParameters(
                 command=self._config.command,  # type: ignore[arg-type]

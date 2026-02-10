@@ -118,7 +118,8 @@ class ProxyServer:
             return [
                 types.TextContent(
                     type="text",
-                    text=f"Request denied: token exchange failed: {exc}",
+                    text=f"Request denied: token exchange failed "
+                    f"(correlation_id={context.correlation_id}): {exc}",
                 )
             ]
 

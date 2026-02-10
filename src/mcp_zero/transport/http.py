@@ -35,7 +35,8 @@ class StreamableHTTPTransport(MCPTransport):
             headers: dict[str, str] = {}
             if context:
                 headers["X-Correlation-ID"] = context.correlation_id
-                headers["X-Trace-ID"] = context.trace_id
+                if context.trace_id is not None:
+                    headers["X-Trace-ID"] = context.trace_id
             if auth_token:
                 headers["Authorization"] = f"Bearer {auth_token}"
 
