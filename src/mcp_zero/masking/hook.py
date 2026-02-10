@@ -123,8 +123,7 @@ class MaskingHook(LifecycleHook):
             )
         except MaskingEngineError as exc:
             logger.error(
-                "Output masking engine failure — blocking response "
-                "(correlation_id=%s): %s",
+                "Output masking engine failure — blocking response (correlation_id=%s): %s",
                 correlation_id,
                 exc,
                 exc_info=True,
@@ -170,8 +169,7 @@ class MaskingHook(LifecycleHook):
                 masked_fields.append(path)
                 for event in result.events:
                     logger.info(
-                        "Output masked %d %s entity(ies) at '%s' "
-                        "(correlation_id=%s)",
+                        "Output masked %d %s entity(ies) at '%s' (correlation_id=%s)",
                         event.count,
                         event.entity_type,
                         path,
@@ -194,9 +192,7 @@ class MaskingHook(LifecycleHook):
             for i, item in enumerate(value):
                 child_path = f"{path}[{i}]"
                 new_list.append(
-                    await self._mask_recursive(
-                        item, child_path, masked_fields, correlation_id
-                    )
+                    await self._mask_recursive(item, child_path, masked_fields, correlation_id)
                 )
             return new_list
 

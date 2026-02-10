@@ -51,9 +51,7 @@ class TestOutputMaskingBasic:
         hook = MaskingHook(engine, _make_config())
         ctx = _make_ctx(
             response_payload={
-                "content": [
-                    {"type": "text", "text": "User John Doe has 3 issues"}
-                ],
+                "content": [{"type": "text", "text": "User John Doe has 3 issues"}],
                 "isError": False,
             }
         )
@@ -128,9 +126,7 @@ class TestOutputMaskingBasic:
         )
 
         hook = MaskingHook(engine, _make_config(entities=["PERSON"]))
-        ctx = _make_ctx(
-            response_payload={"message": "hello"}
-        )
+        ctx = _make_ctx(response_payload={"message": "hello"})
         await hook.on_post_masking(ctx)
 
         engine.mask_text.assert_called_once_with(
@@ -157,15 +153,7 @@ class TestOutputMaskingRecursive:
         engine.mask_text.side_effect = mock_mask
 
         hook = MaskingHook(engine, _make_config())
-        ctx = _make_ctx(
-            response_payload={
-                "result": {
-                    "data": {
-                        "password": "secret123"
-                    }
-                }
-            }
-        )
+        ctx = _make_ctx(response_payload={"result": {"data": {"password": "secret123"}}})
         result = await hook.on_post_masking(ctx)
 
         assert result.output_masking_applied is True
@@ -188,11 +176,7 @@ class TestOutputMaskingRecursive:
         engine.mask_text.side_effect = mock_mask
 
         hook = MaskingHook(engine, _make_config())
-        ctx = _make_ctx(
-            response_payload={
-                "names": ["John Doe", "safe name", "John Smith"]
-            }
-        )
+        ctx = _make_ctx(response_payload={"names": ["John Doe", "safe name", "John Smith"]})
         result = await hook.on_post_masking(ctx)
 
         assert result.output_masking_applied is True
@@ -271,11 +255,7 @@ class TestOutputMaskingRecursive:
         )
 
         hook = MaskingHook(engine, _make_config())
-        ctx = _make_ctx(
-            response_payload={
-                "john@example.com": "some value"
-            }
-        )
+        ctx = _make_ctx(response_payload={"john@example.com": "some value"})
         result = await hook.on_post_masking(ctx)
 
         assert "john@example.com" in result.response_payload
@@ -288,11 +268,7 @@ class TestOutputMaskingDisabled:
         config = _make_config(enabled=False)
 
         hook = MaskingHook(engine, config)
-        ctx = _make_ctx(
-            response_payload={
-                "content": [{"type": "text", "text": "John Smith"}]
-            }
-        )
+        ctx = _make_ctx(response_payload={"content": [{"type": "text", "text": "John Smith"}]})
         result = await hook.on_post_masking(ctx)
 
         engine.mask_text.assert_not_called()
@@ -304,9 +280,7 @@ class TestOutputMaskingDisabled:
         config = _make_config(enabled=False)
 
         hook = MaskingHook(engine, config)
-        ctx = _make_ctx(
-            response_payload={"data": "sensitive"}
-        )
+        ctx = _make_ctx(response_payload={"data": "sensitive"})
         result = await hook.on_post_masking(ctx)
 
         assert result is ctx
@@ -331,11 +305,7 @@ class TestOutputMaskingFailClosed:
         engine.mask_text.side_effect = MaskingEngineError("engine crashed", engine="presidio")
 
         hook = MaskingHook(engine, _make_config())
-        ctx = _make_ctx(
-            response_payload={
-                "content": [{"type": "text", "text": "John Smith"}]
-            }
-        )
+        ctx = _make_ctx(response_payload={"content": [{"type": "text", "text": "John Smith"}]})
 
         with pytest.raises(ShortCircuitError, match="Output masking failed"):
             await hook.on_post_masking(ctx)
@@ -347,9 +317,7 @@ class TestOutputMaskingFailClosed:
         engine.mask_text.side_effect = MaskingEngineError("engine crashed", engine="presidio")
 
         hook = MaskingHook(engine, _make_config())
-        ctx = _make_ctx(
-            response_payload={"message": "John Smith"}
-        )
+        ctx = _make_ctx(response_payload={"message": "John Smith"})
 
         with pytest.raises(ShortCircuitError) as exc_info:
             await hook.on_post_masking(ctx)
@@ -445,9 +413,7 @@ class TestOutputMaskingErrorMessages:
             if "john@" in text:
                 return MaskingResult(
                     masked_text=text.replace("john@example.com", "<EMAIL_ADDRESS>"),
-                    events=[
-                        MaskingEvent(entity_type="EMAIL_ADDRESS", count=1, status="masked")
-                    ],
+                    events=[MaskingEvent(entity_type="EMAIL_ADDRESS", count=1, status="masked")],
                     has_masked=True,
                 )
             return MaskingResult(masked_text=text, events=[], has_masked=False)
@@ -470,8 +436,7 @@ class TestOutputMaskingErrorMessages:
 
         assert result.output_masking_applied is True
         assert (
-            result.response_payload["content"][0]["text"]
-            == "Error: user <EMAIL_ADDRESS> not found"
+            result.response_payload["content"][0]["text"] == "Error: user <EMAIL_ADDRESS> not found"
         )
         # isError flag is preserved (non-string, passes through)
         assert result.response_payload["isError"] is True

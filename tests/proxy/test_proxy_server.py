@@ -328,9 +328,7 @@ class TestProxyServerWithPipeline:
                 return PipelineResult(context=ctx, success=True)
             # Post-pipeline masks the response
             masked_payload = {
-                "content": [
-                    {"type": "text", "text": "Hello <PERSON> at <EMAIL_ADDRESS>"}
-                ],
+                "content": [{"type": "text", "text": "Hello <PERSON> at <EMAIL_ADDRESS>"}],
                 "isError": False,
             }
             return PipelineResult(
