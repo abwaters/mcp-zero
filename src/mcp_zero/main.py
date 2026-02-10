@@ -16,6 +16,7 @@ from mcp_zero.governance.loader import (
 )
 from mcp_zero.identity import IdentityConfig, IdentityHook, JWKSClient, JWTValidator
 from mcp_zero.identity.obo import OBOClient, OBOConfig
+from mcp_zero.masking import MaskingHook, PresidioMaskingEngine
 from mcp_zero.pipeline import HookRegistry, Pipeline
 from mcp_zero.proxy.app import create_app
 from mcp_zero.proxy.auth import AuthProvider
@@ -117,6 +118,15 @@ def _build_pipeline(
         governance_hook = GovernanceHook(engine)
         registry.register(governance_hook, priority=50)
         logger.info("Governance policy enforcement enabled (%d rules)", len(policy_config.policies))
+
+        if policy_config.masking.presidio.enabled:
+            masking_engine = PresidioMaskingEngine(policy_config.masking.presidio)
+            masking_hook = MaskingHook(masking_engine, policy_config.masking.presidio)
+            registry.register(masking_hook, priority=75)
+            logger.info(
+                "Presidio masking enabled (entities=%s)",
+                ", ".join(policy_config.masking.presidio.entities),
+            )
 
     registry.build()
 
