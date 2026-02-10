@@ -418,7 +418,8 @@ class TestMaskingHookFailClosed:
         result = await hook.on_pre_masking(ctx)
 
         engine.mask_text.assert_not_called()
-        assert result is ctx
+        assert result.masking_applied is False
+        assert result.masking_stage_completed is True
 
 
 # ---------------------------------------------------------------------------
@@ -560,6 +561,75 @@ class TestMaskingHookContext:
         result = await hook.on_pre_masking(ctx)
 
         assert result.request.correlation_id == original_request.correlation_id
+
+
+# ---------------------------------------------------------------------------
+# masking_stage_completed flag
+# ---------------------------------------------------------------------------
+
+
+class TestMaskingStageCompleted:
+    @pytest.mark.asyncio
+    async def test_set_true_when_pii_found(self):
+        engine = AsyncMock()
+        engine.mask_text.return_value = MaskingResult(
+            masked_text="<PERSON>",
+            events=[MaskingEvent(entity_type="PERSON", count=1, status="masked")],
+            has_masked=True,
+        )
+
+        hook = MaskingHook(engine, _make_config())
+        ctx = _make_ctx(payload={"name": "John Smith"})
+        result = await hook.on_pre_masking(ctx)
+
+        assert result.masking_stage_completed is True
+
+    @pytest.mark.asyncio
+    async def test_set_true_when_no_pii_found(self):
+        engine = AsyncMock()
+        engine.mask_text.return_value = MaskingResult(
+            masked_text="safe text", events=[], has_masked=False
+        )
+
+        hook = MaskingHook(engine, _make_config())
+        ctx = _make_ctx(payload={"message": "safe text"})
+        result = await hook.on_pre_masking(ctx)
+
+        assert result.masking_stage_completed is True
+
+    @pytest.mark.asyncio
+    async def test_set_true_when_empty_payload(self):
+        engine = AsyncMock()
+
+        hook = MaskingHook(engine, _make_config())
+        ctx = _make_ctx(payload={})
+        result = await hook.on_pre_masking(ctx)
+
+        assert result.masking_stage_completed is True
+
+    @pytest.mark.asyncio
+    async def test_stays_false_when_disabled(self):
+        engine = AsyncMock()
+
+        hook = MaskingHook(engine, _make_config(enabled=False))
+        ctx = _make_ctx(payload={"name": "John"})
+        result = await hook.on_pre_masking(ctx)
+
+        assert result.masking_stage_completed is False
+
+    @pytest.mark.asyncio
+    async def test_stays_false_on_engine_failure(self):
+        engine = AsyncMock()
+        engine.mask_text.side_effect = MaskingEngineError("engine failed", engine="presidio")
+
+        hook = MaskingHook(engine, _make_config())
+        ctx = _make_ctx(payload={"name": "John"})
+
+        with pytest.raises(ShortCircuitError):
+            await hook.on_pre_masking(ctx)
+
+        # ctx was not evolved — masking_stage_completed stays False
+        assert ctx.masking_stage_completed is False
 
 
 # ---------------------------------------------------------------------------

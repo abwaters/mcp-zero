@@ -82,6 +82,16 @@ class TestHookContext:
         assert ctx2.masking_applied is True
         assert ctx2.masked_fields == ["email", "ssn"]
 
+    def test_masking_stage_completed_default(self):
+        ctx = HookContext()
+        assert ctx.masking_stage_completed is False
+
+    def test_evolve_masking_stage_completed(self):
+        ctx = HookContext()
+        ctx2 = ctx.evolve(masking_stage_completed=True)
+        assert ctx2.masking_stage_completed is True
+        assert ctx.masking_stage_completed is False
+
     def test_evolve_short_circuit(self):
         ctx = HookContext()
         ctx2 = ctx.evolve(short_circuited=True, short_circuit_reason="denied")
