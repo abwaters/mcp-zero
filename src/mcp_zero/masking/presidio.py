@@ -88,9 +88,7 @@ class PresidioMaskingEngine(MaskingEngine):
                 engine="presidio",
             ) from exc
 
-    async def mask_text(
-        self, text: str, entities: list[str], direction: str
-    ) -> MaskingResult:
+    async def mask_text(self, text: str, entities: list[str], direction: str) -> MaskingResult:
         """Detect and mask entities using Presidio.
 
         Args:
@@ -133,9 +131,7 @@ class PresidioMaskingEngine(MaskingEngine):
             "DEFAULT": OperatorConfig("replace", {"new_value": "<MASKED>"}),
         }
         for entity_type in counts:
-            operators[entity_type] = OperatorConfig(
-                "replace", {"new_value": f"<{entity_type}>"}
-            )
+            operators[entity_type] = OperatorConfig("replace", {"new_value": f"<{entity_type}>"})
 
         anonymized = anonymizer.anonymize(
             text=text,

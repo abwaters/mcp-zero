@@ -10,9 +10,7 @@ from mcp_zero.masking.engine import MaskingEngine, MaskingEvent, MaskingResult
 class StubEngine(MaskingEngine):
     """Concrete stub for testing the ABC contract."""
 
-    async def mask_text(
-        self, text: str, entities: list[str], direction: str
-    ) -> MaskingResult:
+    async def mask_text(self, text: str, entities: list[str], direction: str) -> MaskingResult:
         return MaskingResult(masked_text=text, events=[], has_masked=False)
 
     def validate_config(self) -> bool:

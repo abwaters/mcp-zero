@@ -65,8 +65,7 @@ class MaskingHook(LifecycleHook):
 
                 for event in result.events:
                     logger.info(
-                        "Masked %d %s entity(ies) in field '%s' "
-                        "(correlation_id=%s)",
+                        "Masked %d %s entity(ies) in field '%s' (correlation_id=%s)",
                         event.count,
                         event.entity_type,
                         key,

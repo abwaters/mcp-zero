@@ -64,9 +64,7 @@ class TestMaskingHookMasksPayload:
             if "alice@" in text:
                 return MaskingResult(
                     masked_text="<EMAIL_ADDRESS>",
-                    events=[
-                        MaskingEvent(entity_type="EMAIL_ADDRESS", count=1, status="masked")
-                    ],
+                    events=[MaskingEvent(entity_type="EMAIL_ADDRESS", count=1, status="masked")],
                     has_masked=True,
                 )
             return MaskingResult(masked_text=text, events=[], has_masked=False)
@@ -142,9 +140,7 @@ class TestMaskingHookErrorHandling:
     @pytest.mark.asyncio
     async def test_engine_error_continues_gracefully(self):
         engine = AsyncMock()
-        engine.mask_text.side_effect = MaskingEngineError(
-            "engine failed", engine="presidio"
-        )
+        engine.mask_text.side_effect = MaskingEngineError("engine failed", engine="presidio")
 
         hook = MaskingHook(engine, _make_config())
         ctx = _make_ctx(payload={"message": "John Smith"})

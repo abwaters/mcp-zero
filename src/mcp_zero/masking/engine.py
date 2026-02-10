@@ -43,9 +43,7 @@ class MaskingEngine(ABC):
     """
 
     @abstractmethod
-    async def mask_text(
-        self, text: str, entities: list[str], direction: str
-    ) -> MaskingResult:
+    async def mask_text(self, text: str, entities: list[str], direction: str) -> MaskingResult:
         """Detect and mask sensitive entities in *text*.
 
         Args:

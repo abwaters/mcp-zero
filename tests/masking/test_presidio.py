@@ -44,9 +44,7 @@ class TestPresidioDetection:
     @pytest.mark.asyncio
     async def test_detect_phone(self):
         engine = _make_engine(entities=["PHONE_NUMBER"])
-        result = await engine.mask_text(
-            "Call me at 555-123-4567", ["PHONE_NUMBER"], "request"
-        )
+        result = await engine.mask_text("Call me at 555-123-4567", ["PHONE_NUMBER"], "request")
         assert result.has_masked is True
         assert "<PHONE_NUMBER>" in result.masked_text
         assert "555-123-4567" not in result.masked_text
@@ -77,9 +75,7 @@ class TestPresidioCustomRecognizers:
     @pytest.mark.asyncio
     async def test_detect_password(self):
         engine = _make_engine(entities=["PASSWORD"])
-        result = await engine.mask_text(
-            "password: SuperSecret123!", ["PASSWORD"], "request"
-        )
+        result = await engine.mask_text("password: SuperSecret123!", ["PASSWORD"], "request")
         assert result.has_masked is True
         assert "<PASSWORD>" in result.masked_text
         assert "SuperSecret123!" not in result.masked_text
@@ -153,9 +149,7 @@ class TestPresidioEdgeCases:
     @pytest.mark.asyncio
     async def test_no_entities_found(self):
         engine = _make_engine(entities=["CREDIT_CARD"])
-        result = await engine.mask_text(
-            "The weather is nice today", ["CREDIT_CARD"], "request"
-        )
+        result = await engine.mask_text("The weather is nice today", ["CREDIT_CARD"], "request")
         assert result.has_masked is False
         assert result.masked_text == "The weather is nice today"
         assert result.events == []
