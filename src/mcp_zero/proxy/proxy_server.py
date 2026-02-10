@@ -13,6 +13,7 @@ from mcp_zero.context import HookContext, PolicyDecision, RequestContext
 from mcp_zero.pipeline import Pipeline
 from mcp_zero.proxy.auth import AuthProvider, NoAuthProvider
 from mcp_zero.proxy.errors import ProxyTimeoutError, UpstreamError
+from mcp_zero.proxy.middleware import auth_header_var
 from mcp_zero.proxy.server_manager import ServerManager
 from mcp_zero.proxy.tool_router import namespace_tools, parse_tool
 from mcp_zero.transport.errors import TransportConnectionError, TransportTimeoutError
@@ -82,6 +83,7 @@ class ProxyServer:
             server_name=server_name,
             tool_name=tool_name,
             request_payload={"arguments": arguments or {}},
+            extras={"authorization": auth_header_var.get("")},
         )
 
         if self._pipeline:
