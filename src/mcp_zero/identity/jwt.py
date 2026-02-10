@@ -71,6 +71,10 @@ class JWTValidator:
                 return self._extract_claims(claims)
             except pyjwt.ExpiredSignatureError as exc:
                 raise TokenExpiredError() from exc
+            except pyjwt.ImmatureSignatureError as exc:
+                raise TokenValidationError(
+                    f"Token is not yet valid (nbf): {exc}", reason="not_yet_valid"
+                ) from exc
             except pyjwt.InvalidIssuerError as exc:
                 raise TokenValidationError(
                     f"Invalid issuer: {exc}", reason="invalid_issuer"

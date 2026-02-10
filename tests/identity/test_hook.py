@@ -37,9 +37,10 @@ class TestIdentityHook:
         ctx = _make_ctx("Bearer valid-token-here")
         result = await hook.on_pre_validation(ctx)
 
-        assert result.request.user_id == "user-123"
-        assert result.request.user_email == "user@example.com"
-        assert result.request.user_groups == ["admin"]
+        assert result.request.identity is not None
+        assert result.request.identity.user_id == "user-123"
+        assert result.request.identity.email == "user@example.com"
+        assert result.request.identity.groups == ["admin"]
         validator.validate_token.assert_called_once_with("valid-token-here")
 
     @pytest.mark.asyncio

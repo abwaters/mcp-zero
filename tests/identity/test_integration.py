@@ -66,9 +66,10 @@ class TestIdentityPipelineIntegration:
         result = await pipeline.execute(ctx)
 
         assert result.success
-        assert result.context.request.user_id == "user-42"
-        assert result.context.request.user_email == "user42@corp.com"
-        assert result.context.request.user_groups == ["engineering"]
+        assert result.context.request.identity is not None
+        assert result.context.request.identity.user_id == "user-42"
+        assert result.context.request.identity.email == "user42@corp.com"
+        assert result.context.request.identity.groups == ["engineering"]
         assert result.context.policy_decision == PolicyDecision.PENDING
 
     @pytest.mark.asyncio

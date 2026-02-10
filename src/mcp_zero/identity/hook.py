@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from dataclasses import replace
 
-from mcp_zero.context import HookContext
+from mcp_zero.context import HookContext, UserIdentity
 from mcp_zero.identity.errors import IdentityError
 from mcp_zero.identity.jwt import JWTValidator
 from mcp_zero.pipeline.errors import ShortCircuitError
@@ -45,12 +45,12 @@ class IdentityHook(LifecycleHook):
             raise ShortCircuitError(f"Authentication failed: {exc}", deny=True) from exc
 
         # Enrich the request context with validated identity
-        new_request = replace(
-            ctx.request,
+        identity = UserIdentity(
             user_id=claims.user_id,
-            user_email=claims.email,
-            user_groups=list(claims.groups),
+            email=claims.email,
+            groups=list(claims.groups),
         )
+        new_request = replace(ctx.request, identity=identity)
         return ctx.evolve(request=new_request)
 
     @staticmethod
