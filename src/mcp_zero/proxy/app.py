@@ -8,8 +8,9 @@ from collections.abc import AsyncIterator
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from starlette.applications import Starlette
 from starlette.routing import Mount
-from starlette.types import Receive, Scope, Send
+from starlette.types import ASGIApp, Receive, Scope, Send
 
+from mcp_zero.proxy.middleware import AuthHeaderMiddleware
 from mcp_zero.proxy.proxy_server import ProxyServer
 from mcp_zero.proxy.server_manager import ServerManager
 
@@ -17,7 +18,7 @@ from mcp_zero.proxy.server_manager import ServerManager
 def create_app(
     proxy_server: ProxyServer,
     server_manager: ServerManager,
-) -> Starlette:
+) -> ASGIApp:
     """Build a Starlette ASGI app that serves the MCP proxy on ``/mcp``."""
     session_manager = StreamableHTTPSessionManager(
         app=proxy_server.mcp_server,
@@ -35,9 +36,10 @@ def create_app(
     async def mcp_asgi(scope: Scope, receive: Receive, send: Send) -> None:
         await session_manager.handle_request(scope, receive, send)
 
-    return Starlette(
+    app = Starlette(
         routes=[
             Mount("/mcp", app=mcp_asgi),
         ],
         lifespan=lifespan,
     )
+    return AuthHeaderMiddleware(app)

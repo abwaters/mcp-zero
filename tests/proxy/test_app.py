@@ -6,6 +6,7 @@ import pytest
 from starlette.applications import Starlette
 
 from mcp_zero.proxy.app import create_app
+from mcp_zero.proxy.middleware import AuthHeaderMiddleware
 from mcp_zero.proxy.proxy_server import ProxyServer
 from mcp_zero.proxy.server_manager import ServerManager
 from mcp_zero.transport.config import ServerConfig, TransportType
@@ -18,17 +19,20 @@ def make_configs():
 
 
 class TestCreateApp:
-    def test_returns_starlette_app(self):
+    def test_returns_asgi_app_with_middleware(self):
         mgr = ServerManager(make_configs())
         proxy = ProxyServer(mgr)
         app = create_app(proxy, mgr)
-        assert isinstance(app, Starlette)
+        assert isinstance(app, AuthHeaderMiddleware)
+        # The inner app should be a Starlette instance
+        assert isinstance(app._app, Starlette)
 
     def test_has_mcp_route(self):
         mgr = ServerManager(make_configs())
         proxy = ProxyServer(mgr)
         app = create_app(proxy, mgr)
-        route_paths = [r.path for r in app.routes]
+        inner_app = app._app
+        route_paths = [r.path for r in inner_app.routes]
         assert "/mcp" in route_paths
 
     @pytest.mark.asyncio
@@ -47,9 +51,10 @@ class TestCreateApp:
             mock_session_mgr_cls.return_value = mock_session_mgr
 
             app = create_app(proxy, mgr)
+            inner_app = app._app
 
             # Simulate lifespan
-            async with app.router.lifespan_context(app):
+            async with inner_app.router.lifespan_context(inner_app):
                 pass
 
             mgr.disconnect_all.assert_awaited_once()
