@@ -381,10 +381,17 @@ def _build_masking(data: dict) -> MaskingConfig:
 
 
 def _validate_cross_references(policy: PolicyConfig) -> None:
-    """Check that server names in policies exist in the servers list."""
+    """Check that server names in policies exist in the servers list.
+
+    Server names that contain wildcards (``*``, ``prefix*``, ``*suffix``) are
+    skipped because they match dynamically at evaluation time rather than
+    referencing a specific server definition.
+    """
     server_names = {s.name for s in policy.servers}
     for rule in policy.policies:
         for access in rule.mcp_servers:
+            if "*" in access.name:
+                continue
             if access.name not in server_names:
                 raise PolicyReferenceError(
                     f"Policy '{rule.id}' references unknown server '{access.name}'",

@@ -1,4 +1,4 @@
-"""Governance policy file loading and validation."""
+"""Governance policy file loading, validation, and evaluation."""
 
 from mcp_zero.governance.config import (
     IdentityProviderConfig,
@@ -11,6 +11,11 @@ from mcp_zero.governance.config import (
     PolicySubjects,
     PresidioConfig,
     ServerDefinition,
+)
+from mcp_zero.governance.engine import (
+    EvaluationResult,
+    PolicyEngine,
+    PolicyInput,
 )
 from mcp_zero.governance.errors import (
     GovernanceError,
@@ -25,13 +30,16 @@ from mcp_zero.governance.loader import (
 )
 
 __all__ = [
+    "EvaluationResult",
     "GovernanceError",
     "IdentityProviderConfig",
     "LoggingConfig",
     "MaskingConfig",
     "PolicyConfig",
     "PolicyEffect",
+    "PolicyEngine",
     "PolicyFileError",
+    "PolicyInput",
     "PolicyReferenceError",
     "PolicyRule",
     "PolicyServerAccess",
