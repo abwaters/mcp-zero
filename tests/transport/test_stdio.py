@@ -102,6 +102,31 @@ class TestStdioTransport:
         assert call_args.env["MCP_TRACE_ID"] == "t-1"
 
     @pytest.mark.asyncio
+    async def test_connect_no_trace_id_omits_env_var(self, mock_sdk):
+        cfg = make_stdio_config()
+        ctx = RequestContext(correlation_id="c-1")  # trace_id defaults to None
+        t = StdioTransport(cfg)
+
+        await t.connect(context=ctx)
+
+        call_args = mock_sdk["client"].call_args[0][0]
+        assert call_args.env["MCP_CORRELATION_ID"] == "c-1"
+        assert "MCP_TRACE_ID" not in call_args.env
+
+    @pytest.mark.asyncio
+    async def test_connect_no_trace_id_omits_env_var_with_existing_env(self, mock_sdk):
+        cfg = make_stdio_config(env={"EXISTING": "value"})
+        ctx = RequestContext(correlation_id="c-1")  # trace_id defaults to None
+        t = StdioTransport(cfg)
+
+        await t.connect(context=ctx)
+
+        call_args = mock_sdk["client"].call_args[0][0]
+        assert call_args.env["EXISTING"] == "value"
+        assert call_args.env["MCP_CORRELATION_ID"] == "c-1"
+        assert "MCP_TRACE_ID" not in call_args.env
+
+    @pytest.mark.asyncio
     async def test_connect_merges_env_with_correlation(self, mock_sdk):
         cfg = make_stdio_config(env={"EXISTING": "value"})
         ctx = RequestContext(correlation_id="corr-456", trace_id="trace-789")

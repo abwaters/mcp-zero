@@ -14,9 +14,9 @@ class TestRequestContext:
         ctx = RequestContext()
         assert UUID4_RE.match(ctx.correlation_id)
 
-    def test_trace_id_defaults_to_correlation_id(self):
+    def test_trace_id_defaults_to_none(self):
         ctx = RequestContext()
-        assert ctx.trace_id == ctx.correlation_id
+        assert ctx.trace_id is None
 
     def test_explicit_trace_id_preserved(self):
         ctx = RequestContext(trace_id="my-trace")
@@ -41,10 +41,19 @@ class TestRequestContext:
         assert child.correlation_id != parent.correlation_id
         assert UUID4_RE.match(child.correlation_id)
 
-    def test_child_context_inherits_trace_id(self):
+    def test_child_context_trace_id_is_parent_correlation_id(self):
         parent = RequestContext()
         child = parent.child_context()
-        assert child.trace_id == parent.trace_id
+        assert child.trace_id == parent.correlation_id
+
+    def test_child_of_child_preserves_root_trace_id(self):
+        grandparent = RequestContext()
+        parent = grandparent.child_context()
+        child = parent.child_context()
+        # grandchild's trace_id is its parent's correlation_id (not grandparent's)
+        assert child.trace_id == parent.correlation_id
+        # parent's trace_id is grandparent's correlation_id
+        assert parent.trace_id == grandparent.correlation_id
 
     def test_child_context_inherits_user_identity(self):
         identity = UserIdentity(user_id="u1", email="u@x.com", groups=["admin"])

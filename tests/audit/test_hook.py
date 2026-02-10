@@ -71,7 +71,7 @@ class TestAuditHookNormalFlow:
 
         event = hook.events[0]
         assert event.correlation_id == ctx.request.correlation_id
-        assert event.trace_id == ctx.request.trace_id
+        assert event.trace_id is ctx.request.trace_id  # None for top-level
         assert event.user_id == "test-user"
         assert event.server_name == "test-server"
         assert event.tool_name == "test-tool"

@@ -56,7 +56,7 @@ class AuditEvent:
 
     event_type: AuditEventType
     correlation_id: str = ""
-    trace_id: str = ""
+    trace_id: str | None = None
     user_id: str = ""
     user_groups: list[str] = field(default_factory=list)
     server_name: str = ""

@@ -22,24 +22,24 @@ class UserIdentity:
 class RequestContext:
     """Per-request context carrying correlation ID and user identity.
 
-    Each request gets a unique ``correlation_id``.  A ``trace_id`` groups
-    parent-child calls together — it defaults to the ``correlation_id`` of the
-    root request and is inherited by child contexts.
+    Each request gets a unique ``correlation_id``.  A ``trace_id`` links a
+    child request back to its parent — it is ``None`` for top-level requests
+    and set to the parent's ``correlation_id`` for child contexts.
     """
 
     correlation_id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    trace_id: str = ""
+    trace_id: str | None = None
     identity: UserIdentity | None = None
     raw_token: str | None = None
 
-    def __post_init__(self) -> None:
-        if not self.trace_id:
-            object.__setattr__(self, "trace_id", self.correlation_id)
-
     def child_context(self) -> RequestContext:
-        """Create a child context with a new correlation ID but the same trace."""
+        """Create a child context with a new correlation ID.
+
+        The child's ``trace_id`` is set to this context's ``correlation_id``,
+        linking the child back to its parent request.
+        """
         return RequestContext(
-            trace_id=self.trace_id,
+            trace_id=self.correlation_id,
             identity=self.identity,
             raw_token=self.raw_token,
         )

@@ -113,6 +113,38 @@ class TestJsonEmission:
         assert parsed["response_size_bytes"] == len(json.dumps(resp_payload).encode())
 
 
+class TestJsonTraceIdEmission:
+    """Tests verifying trace_id is null for top-level and set for child contexts."""
+
+    @pytest.mark.asyncio
+    async def test_top_level_emits_trace_id_null(self, caplog):
+        hook = AuditHook()
+        ctx = _make_ctx()  # top-level request, trace_id is None
+
+        with caplog.at_level(logging.INFO, logger="mcp_zero.audit.hook"):
+            await hook.on_pre_audit(ctx)
+
+        parsed = json.loads(caplog.records[0].message)
+        assert parsed["trace_id"] is None
+
+    @pytest.mark.asyncio
+    async def test_child_context_emits_parent_correlation_id_as_trace_id(self, caplog):
+        hook = AuditHook()
+        parent_request = RequestContext(
+            identity=UserIdentity(
+                user_id="test-user", email="test@example.com", groups=["admin", "dev"]
+            ),
+        )
+        child_request = parent_request.child_context()
+        ctx = _make_ctx(request=child_request)
+
+        with caplog.at_level(logging.INFO, logger="mcp_zero.audit.hook"):
+            await hook.on_pre_audit(ctx)
+
+        parsed = json.loads(caplog.records[0].message)
+        assert parsed["trace_id"] == parent_request.correlation_id
+
+
 class TestJsonFieldFiltering:
     """Tests for field filtering via logging.include."""
 
