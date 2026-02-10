@@ -7,6 +7,7 @@ import os
 
 import uvicorn
 
+from mcp_zero.audit import AuditHook
 from mcp_zero.governance import GovernanceHook, PolicyConfig, PolicyEngine
 from mcp_zero.governance.errors import GovernanceError
 from mcp_zero.governance.loader import (
@@ -127,6 +128,9 @@ def _build_pipeline(
                 "Presidio masking enabled (entities=%s)",
                 ", ".join(policy_config.masking.presidio.entities),
             )
+
+    audit_hook = AuditHook()
+    registry.register(audit_hook, priority=150)
 
     registry.build()
 
