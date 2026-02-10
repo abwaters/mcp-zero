@@ -49,7 +49,7 @@ class MaskingHook(LifecycleHook):
         correlation_id = ctx.request.correlation_id
         payload = ctx.request_payload
         if not payload:
-            return ctx
+            return ctx.evolve(masking_stage_completed=True)
 
         masked_fields: list[str] = []
         all_events: list[MaskingEvent] = []
@@ -80,9 +80,10 @@ class MaskingHook(LifecycleHook):
                 masking_applied=True,
                 masked_fields=masked_fields,
                 masking_events=all_events,
+                masking_stage_completed=True,
             )
 
-        return ctx
+        return ctx.evolve(masking_stage_completed=True)
 
     # ------------------------------------------------------------------
     # Output masking (response payloads)
@@ -101,7 +102,7 @@ class MaskingHook(LifecycleHook):
 
         payload = ctx.response_payload
         if not payload:
-            return ctx
+            return ctx.evolve(masking_stage_completed=True)
 
         correlation_id = ctx.request.correlation_id
         masked_fields: list[str] = []
@@ -130,9 +131,10 @@ class MaskingHook(LifecycleHook):
                 response_payload=new_payload,
                 output_masking_applied=True,
                 output_masked_fields=masked_fields,
+                masking_stage_completed=True,
             )
 
-        return ctx
+        return ctx.evolve(masking_stage_completed=True)
 
     # ------------------------------------------------------------------
     # Recursive walkers

@@ -72,6 +72,7 @@ class HookContext:
     masking_events: list[Any] = field(default_factory=list)
     output_masking_applied: bool = False
     output_masked_fields: list[str] = field(default_factory=list)
+    masking_stage_completed: bool = False
     short_circuited: bool = False
     short_circuit_reason: str = ""
     started_at: float = field(default_factory=time.monotonic)
