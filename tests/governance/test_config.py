@@ -66,13 +66,13 @@ class TestIdentityProviderConfig:
 
     def test_http_issuer_rejected(self):
         with pytest.raises(ValueError, match="must use https://"):
-            IdentityProviderConfig(
-                provider="okta", issuer="http://example.com", audience="a"
-            )
+            IdentityProviderConfig(provider="okta", issuer="http://example.com", audience="a")
 
     def test_http_issuer_allowed_with_allow_insecure(self):
         cfg = IdentityProviderConfig(
-            provider="okta", issuer="http://example.com", audience="a",
+            provider="okta",
+            issuer="http://example.com",
+            audience="a",
             allow_insecure=True,
         )
         assert cfg.issuer == "http://example.com"

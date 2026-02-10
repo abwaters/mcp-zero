@@ -87,7 +87,9 @@ class TestServerConfig:
         assert cfg.restart_delay == 5.0
 
     def test_timeout_retry_defaults(self):
-        cfg = ServerConfig(name="remote", transport=TransportType.HTTP, url="https://localhost:8080")
+        cfg = ServerConfig(
+            name="remote", transport=TransportType.HTTP, url="https://localhost:8080"
+        )
         assert cfg.timeout_seconds == 30.0
         assert cfg.max_retries == 2
         assert cfg.retry_delay_seconds == 1.0
@@ -106,7 +108,9 @@ class TestServerConfig:
         assert cfg.retry_delay_seconds == 2.0
 
     def test_token_exchange_defaults(self):
-        cfg = ServerConfig(name="remote", transport=TransportType.HTTP, url="https://localhost:8080")
+        cfg = ServerConfig(
+            name="remote", transport=TransportType.HTTP, url="https://localhost:8080"
+        )
         assert cfg.token_exchange is False
         assert cfg.target_audience is None
         assert cfg.required_scopes == []

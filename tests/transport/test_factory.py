@@ -11,7 +11,9 @@ from mcp_zero.transport.stdio import StdioTransport
 
 class TestTransportFactory:
     def test_create_http(self):
-        cfg = ServerConfig(name="remote", transport=TransportType.HTTP, url="https://localhost:8080")
+        cfg = ServerConfig(
+            name="remote", transport=TransportType.HTTP, url="https://localhost:8080"
+        )
         transport = TransportFactory.create(cfg)
         assert isinstance(transport, StreamableHTTPTransport)
         assert transport.config is cfg
