@@ -56,6 +56,4 @@ class ServerConfig:
                     f"token_exchange is not supported for stdio transport ('{self.name}')"
                 )
             if not self.target_audience:
-                raise ValueError(
-                    f"token_exchange for '{self.name}' requires 'target_audience'"
-                )
+                raise ValueError(f"token_exchange for '{self.name}' requires 'target_audience'")

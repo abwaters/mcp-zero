@@ -66,9 +66,7 @@ class TestOBOConfig:
 
 class TestExchangedToken:
     def test_not_expired(self):
-        token = ExchangedToken(
-            access_token="t", token_type="Bearer", expires_in=3600, scope=""
-        )
+        token = ExchangedToken(access_token="t", token_type="Bearer", expires_in=3600, scope="")
         assert token.is_expired(ttl=60) is False
 
     def test_expired(self):

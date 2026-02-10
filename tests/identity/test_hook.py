@@ -124,9 +124,7 @@ class TestIdentityHook:
     @pytest.mark.asyncio
     async def test_raw_token_stored(self):
         validator = AsyncMock()
-        validator.validate_token = AsyncMock(
-            return_value=TokenClaims(user_id="user-1")
-        )
+        validator.validate_token = AsyncMock(return_value=TokenClaims(user_id="user-1"))
 
         hook = IdentityHook(validator)
         ctx = _make_ctx("Bearer my-jwt-token")
