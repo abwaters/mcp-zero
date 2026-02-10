@@ -97,6 +97,7 @@ def convert_to_server_configs(policy: PolicyConfig) -> list[ServerConfig]:
             "name": server.name,
             "transport": TransportType(server.transport),
             "token_exchange": server.token_exchange,
+            "allow_insecure": server.allow_insecure,
         }
         if server.url is not None:
             kwargs["url"] = server.url
@@ -138,6 +139,7 @@ def convert_to_identity_config(policy: PolicyConfig) -> IdentityConfig | None:
         issuer=identity.issuer,
         audience=identity.audience,
         claim_mapping=claim_mapping,
+        allow_insecure=identity.allow_insecure,
     )
 
 
@@ -256,6 +258,7 @@ def _build_identity(data: dict) -> IdentityProviderConfig:
             issuer=data.get("issuer", ""),
             audience=data.get("audience", ""),
             claim_mapping=data.get("claim_mapping", {}),
+            allow_insecure=data.get("allow_insecure", False),
         )
     except ValueError as exc:
         raise PolicyValidationError(str(exc), field="identity") from exc
@@ -276,6 +279,7 @@ def _build_server(data: dict, index: int) -> ServerDefinition:
             token_exchange=data.get("token_exchange", False),
             target_audience=data.get("target_audience"),
             required_scopes=data.get("required_scopes", []),
+            allow_insecure=data.get("allow_insecure", False),
         )
     except ValueError as exc:
         raise PolicyValidationError(str(exc), field=f"servers[{index}]") from exc

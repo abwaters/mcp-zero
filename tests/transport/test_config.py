@@ -19,10 +19,12 @@ class TestTransportType:
 
 class TestServerConfig:
     def test_http_config_valid(self):
-        cfg = ServerConfig(name="remote", transport=TransportType.HTTP, url="http://localhost:8080")
+        cfg = ServerConfig(
+            name="remote", transport=TransportType.HTTP, url="https://localhost:8080"
+        )
         assert cfg.name == "remote"
         assert cfg.transport == TransportType.HTTP
-        assert cfg.url == "http://localhost:8080"
+        assert cfg.url == "https://localhost:8080"
 
     def test_http_config_missing_url(self):
         with pytest.raises(ValueError, match="requires 'url'"):
@@ -45,7 +47,9 @@ class TestServerConfig:
             ServerConfig(name="local", transport=TransportType.STDIO)
 
     def test_frozen(self):
-        cfg = ServerConfig(name="remote", transport=TransportType.HTTP, url="http://localhost:8080")
+        cfg = ServerConfig(
+            name="remote", transport=TransportType.HTTP, url="https://localhost:8080"
+        )
         with pytest.raises(AttributeError):
             cfg.name = "other"  # type: ignore[misc]
 
@@ -75,7 +79,7 @@ class TestServerConfig:
         cfg = ServerConfig(
             name="remote",
             transport=TransportType.HTTP,
-            url="http://localhost:8080",
+            url="https://localhost:8080",
             max_restarts=10,
             restart_delay=5.0,
         )
@@ -83,7 +87,9 @@ class TestServerConfig:
         assert cfg.restart_delay == 5.0
 
     def test_timeout_retry_defaults(self):
-        cfg = ServerConfig(name="remote", transport=TransportType.HTTP, url="http://localhost:8080")
+        cfg = ServerConfig(
+            name="remote", transport=TransportType.HTTP, url="https://localhost:8080"
+        )
         assert cfg.timeout_seconds == 30.0
         assert cfg.max_retries == 2
         assert cfg.retry_delay_seconds == 1.0
@@ -92,7 +98,7 @@ class TestServerConfig:
         cfg = ServerConfig(
             name="remote",
             transport=TransportType.HTTP,
-            url="http://localhost:8080",
+            url="https://localhost:8080",
             timeout_seconds=60.0,
             max_retries=5,
             retry_delay_seconds=2.0,
@@ -102,7 +108,9 @@ class TestServerConfig:
         assert cfg.retry_delay_seconds == 2.0
 
     def test_token_exchange_defaults(self):
-        cfg = ServerConfig(name="remote", transport=TransportType.HTTP, url="http://localhost:8080")
+        cfg = ServerConfig(
+            name="remote", transport=TransportType.HTTP, url="https://localhost:8080"
+        )
         assert cfg.token_exchange is False
         assert cfg.target_audience is None
         assert cfg.required_scopes == []
@@ -111,7 +119,7 @@ class TestServerConfig:
         cfg = ServerConfig(
             name="remote",
             transport=TransportType.HTTP,
-            url="http://localhost:8080",
+            url="https://localhost:8080",
             token_exchange=True,
             target_audience="api://mcp-server",
             required_scopes=["read", "write"],
@@ -135,6 +143,23 @@ class TestServerConfig:
             ServerConfig(
                 name="remote",
                 transport=TransportType.HTTP,
-                url="http://localhost:8080",
+                url="https://localhost:8080",
                 token_exchange=True,
             )
+
+    def test_http_rejects_insecure_url(self):
+        with pytest.raises(ValueError, match="must use https://"):
+            ServerConfig(name="remote", transport=TransportType.HTTP, url="http://localhost:8080")
+
+    def test_http_allows_insecure_with_flag(self):
+        cfg = ServerConfig(
+            name="remote",
+            transport=TransportType.HTTP,
+            url="http://localhost:8080",
+            allow_insecure=True,
+        )
+        assert cfg.url == "http://localhost:8080"
+
+    def test_stdio_unaffected_by_https_check(self):
+        cfg = ServerConfig(name="local", transport=TransportType.STDIO, command="python")
+        assert cfg.allow_insecure is False

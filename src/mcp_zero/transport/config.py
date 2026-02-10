@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from mcp_zero.url_validation import require_https
+
 
 class TransportType(StrEnum):
     """Transport protocol type, matching YAML config values."""
@@ -42,10 +44,15 @@ class ServerConfig:
     target_audience: str | None = None
     required_scopes: list[str] = field(default_factory=list)
 
+    # Security
+    allow_insecure: bool = False
+
     def __post_init__(self) -> None:
         if self.transport == TransportType.HTTP:
             if not self.url:
                 raise ValueError(f"HTTP transport for '{self.name}' requires 'url'")
+            if not self.allow_insecure:
+                require_https(self.url, f"url for '{self.name}'")
         elif self.transport == TransportType.STDIO:
             if not self.command:
                 raise ValueError(f"stdio transport for '{self.name}' requires 'command'")

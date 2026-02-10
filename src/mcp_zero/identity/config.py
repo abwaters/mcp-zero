@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from mcp_zero.url_validation import require_https
+
 
 @dataclass(frozen=True)
 class ClaimMapping:
@@ -31,9 +33,12 @@ class IdentityConfig:
     audience: str = ""
     jwks_cache_ttl: int = 3600
     claim_mapping: ClaimMapping = field(default_factory=ClaimMapping)
+    allow_insecure: bool = False
 
     def __post_init__(self) -> None:
         if not self.issuer:
             raise ValueError("issuer is required")
         if not self.audience:
             raise ValueError("audience is required")
+        if not self.allow_insecure:
+            require_https(self.issuer, "issuer")

@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from mcp_zero.url_validation import require_https
+
 
 class PolicyEffect(StrEnum):
     """Effect of a policy rule."""
@@ -28,6 +30,7 @@ class IdentityProviderConfig:
     issuer: str = ""
     audience: str = ""
     claim_mapping: dict[str, str] = field(default_factory=dict)
+    allow_insecure: bool = False
 
     def __post_init__(self) -> None:
         if not self.provider:
@@ -36,6 +39,8 @@ class IdentityProviderConfig:
             raise ValueError("identity.issuer is required")
         if not self.audience:
             raise ValueError("identity.audience is required")
+        if not self.allow_insecure:
+            require_https(self.issuer, "identity.issuer")
 
 
 @dataclass(frozen=True)
@@ -63,6 +68,7 @@ class ServerDefinition:
     token_exchange: bool = False
     target_audience: str | None = None
     required_scopes: list[str] = field(default_factory=list)
+    allow_insecure: bool = False
 
     def __post_init__(self) -> None:
         if not self.name:

@@ -11,7 +11,7 @@ from mcp_zero.transport.errors import SessionError, TransportClosedError, Transp
 from mcp_zero.transport.http import StreamableHTTPTransport
 
 
-def make_http_config(name="test-http", url="http://localhost:8080"):
+def make_http_config(name="test-http", url="https://localhost:8080"):
     return ServerConfig(name=name, transport=TransportType.HTTP, url=url)
 
 
@@ -206,7 +206,7 @@ class TestStreamableHTTPTransport:
         cfg = ServerConfig(
             name="test-http",
             transport=TransportType.HTTP,
-            url="http://localhost:8080",
+            url="https://localhost:8080",
             timeout_seconds=60.0,
         )
         ctx = RequestContext()
