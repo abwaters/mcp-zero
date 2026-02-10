@@ -7,6 +7,7 @@ import os
 
 import uvicorn
 
+from mcp_zero.governance import GovernanceHook, PolicyConfig, PolicyEngine
 from mcp_zero.governance.errors import GovernanceError
 from mcp_zero.governance.loader import (
     convert_to_identity_config,
@@ -43,15 +44,18 @@ def _load_server_configs() -> list[ServerConfig]:
     ]
 
 
-def _load_policy_and_configs() -> tuple[list[ServerConfig], IdentityConfig | None]:
-    """Load server configs and identity config from policy file or env vars.
+def _load_policy_and_configs() -> tuple[
+    list[ServerConfig], IdentityConfig | None, PolicyConfig | None
+]:
+    """Load server configs, identity config, and policy config from policy file or env vars.
 
     Reads ``MCP_POLICY_FILE`` env var for the policy file path.
     If not set, falls back to legacy ``MCP_UPSTREAM_URL`` behavior.
 
     Returns:
-        A tuple of (server_configs, identity_config). identity_config is None
-        when no identity section is in the policy or when using legacy env vars.
+        A 3-tuple of (server_configs, identity_config, policy_config).
+        identity_config and policy_config are None when no policy file is
+        configured or when using legacy env vars.
 
     Raises:
         GovernanceError: If the policy file is invalid (fail-fast at startup).
@@ -60,7 +64,7 @@ def _load_policy_and_configs() -> tuple[list[ServerConfig], IdentityConfig | Non
 
     if not policy_file:
         logger.info("MCP_POLICY_FILE not set — using legacy env var configuration")
-        return _load_server_configs(), None
+        return _load_server_configs(), None, None
 
     try:
         policy = load_policy_file(policy_file)
@@ -70,16 +74,20 @@ def _load_policy_and_configs() -> tuple[list[ServerConfig], IdentityConfig | Non
 
     configs = convert_to_server_configs(policy)
     identity_config = convert_to_identity_config(policy)
-    return configs, identity_config
+    return configs, identity_config, policy
 
 
-def _build_identity_pipeline(
+def _build_pipeline(
     identity_config: IdentityConfig | None = None,
+    policy_config: PolicyConfig | None = None,
 ) -> Pipeline | None:
-    """Build a Pipeline with the IdentityHook.
+    """Build a Pipeline with identity and governance hooks.
 
     If *identity_config* is provided (from a policy file), it is used directly.
     Otherwise falls back to ``OKTA_ISSUER`` / ``OKTA_AUDIENCE`` env vars.
+
+    If *policy_config* is provided, a GovernanceHook is registered at priority 50
+    (after IdentityHook at priority 10) to enforce allow/deny policies.
     """
     if identity_config is None:
         issuer = os.environ.get("OKTA_ISSUER", "")
@@ -99,10 +107,17 @@ def _build_identity_pipeline(
 
     jwks_client = JWKSClient(identity_config)
     validator = JWTValidator(identity_config, jwks_client)
-    hook = IdentityHook(validator)
+    identity_hook = IdentityHook(validator)
 
     registry = HookRegistry()
-    registry.register(hook, priority=10)
+    registry.register(identity_hook, priority=10)
+
+    if policy_config is not None:
+        engine = PolicyEngine(policy_config)
+        governance_hook = GovernanceHook(engine)
+        registry.register(governance_hook, priority=50)
+        logger.info("Governance policy enforcement enabled (%d rules)", len(policy_config.policies))
+
     registry.build()
 
     logger.info("Identity validation enabled (issuer=%s)", identity_config.issuer)
@@ -165,12 +180,12 @@ def run() -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
 
-    configs, identity_config = _load_policy_and_configs()
+    configs, identity_config, policy_config = _load_policy_and_configs()
     if not configs:
         logger.info("No upstream servers configured — starting in pass-through mode")
 
-    # Build identity pipeline (from policy file or env vars)
-    pipeline = _build_identity_pipeline(identity_config)
+    # Build pipeline with identity + governance hooks
+    pipeline = _build_pipeline(identity_config, policy_config)
 
     # Build OBO auth provider when Okta OBO env vars are set
     auth_provider = _build_obo_provider(configs)
