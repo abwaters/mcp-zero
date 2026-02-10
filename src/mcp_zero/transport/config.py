@@ -37,6 +37,11 @@ class ServerConfig:
     max_retries: int = 2
     retry_delay_seconds: float = 1.0
 
+    # OBO token exchange
+    token_exchange: bool = False
+    target_audience: str | None = None
+    required_scopes: list[str] = field(default_factory=list)
+
     def __post_init__(self) -> None:
         if self.transport == TransportType.HTTP:
             if not self.url:
@@ -44,3 +49,11 @@ class ServerConfig:
         elif self.transport == TransportType.STDIO:
             if not self.command:
                 raise ValueError(f"stdio transport for '{self.name}' requires 'command'")
+
+        if self.token_exchange:
+            if self.transport == TransportType.STDIO:
+                raise ValueError(
+                    f"token_exchange is not supported for stdio transport ('{self.name}')"
+                )
+            if not self.target_audience:
+                raise ValueError(f"token_exchange for '{self.name}' requires 'target_audience'")

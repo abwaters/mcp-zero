@@ -30,6 +30,7 @@ class RequestContext:
     correlation_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     trace_id: str = ""
     identity: UserIdentity | None = None
+    raw_token: str | None = None
 
     def __post_init__(self) -> None:
         if not self.trace_id:
@@ -40,6 +41,7 @@ class RequestContext:
         return RequestContext(
             trace_id=self.trace_id,
             identity=self.identity,
+            raw_token=self.raw_token,
         )
 
 

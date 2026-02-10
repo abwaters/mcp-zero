@@ -61,3 +61,16 @@ class TestRequestContext:
         child = parent.child_context()
         # UserIdentity is frozen, so sharing the same instance is safe
         assert child.identity is parent.identity
+
+    def test_raw_token_default_none(self):
+        ctx = RequestContext()
+        assert ctx.raw_token is None
+
+    def test_raw_token_set(self):
+        ctx = RequestContext(raw_token="jwt-abc")
+        assert ctx.raw_token == "jwt-abc"
+
+    def test_child_context_inherits_raw_token(self):
+        parent = RequestContext(raw_token="jwt-abc")
+        child = parent.child_context()
+        assert child.raw_token == "jwt-abc"

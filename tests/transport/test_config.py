@@ -100,3 +100,41 @@ class TestServerConfig:
         assert cfg.timeout_seconds == 60.0
         assert cfg.max_retries == 5
         assert cfg.retry_delay_seconds == 2.0
+
+    def test_token_exchange_defaults(self):
+        cfg = ServerConfig(name="remote", transport=TransportType.HTTP, url="http://localhost:8080")
+        assert cfg.token_exchange is False
+        assert cfg.target_audience is None
+        assert cfg.required_scopes == []
+
+    def test_token_exchange_valid(self):
+        cfg = ServerConfig(
+            name="remote",
+            transport=TransportType.HTTP,
+            url="http://localhost:8080",
+            token_exchange=True,
+            target_audience="api://mcp-server",
+            required_scopes=["read", "write"],
+        )
+        assert cfg.token_exchange is True
+        assert cfg.target_audience == "api://mcp-server"
+        assert cfg.required_scopes == ["read", "write"]
+
+    def test_token_exchange_stdio_rejected(self):
+        with pytest.raises(ValueError, match="not supported for stdio"):
+            ServerConfig(
+                name="local",
+                transport=TransportType.STDIO,
+                command="python",
+                token_exchange=True,
+                target_audience="api://mcp-server",
+            )
+
+    def test_token_exchange_missing_audience(self):
+        with pytest.raises(ValueError, match="requires 'target_audience'"):
+            ServerConfig(
+                name="remote",
+                transport=TransportType.HTTP,
+                url="http://localhost:8080",
+                token_exchange=True,
+            )

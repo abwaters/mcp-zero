@@ -38,3 +38,16 @@ class TokenExpiredError(TokenValidationError):
 
     def __init__(self, message: str = "Token has expired") -> None:
         super().__init__(message, reason="expired")
+
+
+class TokenExchangeError(IdentityError):
+    """OBO token exchange failed.
+
+    Args:
+        message: Error description.
+        audience: The target audience for the failed exchange.
+    """
+
+    def __init__(self, message: str, *, audience: str = "") -> None:
+        self.audience = audience
+        super().__init__(message)

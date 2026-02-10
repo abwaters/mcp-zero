@@ -10,6 +10,7 @@ import mcp.types as types
 from mcp.server.lowlevel import Server
 
 from mcp_zero.context import HookContext, PolicyDecision, RequestContext
+from mcp_zero.identity.errors import TokenExchangeError
 from mcp_zero.pipeline import Pipeline
 from mcp_zero.proxy.auth import AuthProvider, NoAuthProvider
 from mcp_zero.proxy.errors import ProxyTimeoutError, UpstreamError
@@ -97,8 +98,20 @@ class ProxyServer:
                     )
                 ]
 
+        # Use enriched context (has identity + raw_token after pipeline)
+        context = hook_ctx.request
+
         # Get auth token
-        auth_token = await self._auth_provider.get_token(server_name, context)
+        try:
+            auth_token = await self._auth_provider.get_token(server_name, context)
+        except TokenExchangeError as exc:
+            logger.warning("Token exchange failed for '%s': %s", server_name, exc)
+            return [
+                types.TextContent(
+                    type="text",
+                    text=f"Request denied: token exchange failed: {exc}",
+                )
+            ]
 
         # Call upstream with retries
         last_error: Exception | None = None
