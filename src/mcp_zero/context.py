@@ -77,6 +77,7 @@ class HookContext:
     short_circuit_reason: str = ""
     started_at: float = field(default_factory=time.monotonic)
     extras: dict[str, Any] = field(default_factory=dict)
+    transport: str = ""
 
     def evolve(self, **changes: Any) -> HookContext:
         """Return a new HookContext with the given fields replaced."""

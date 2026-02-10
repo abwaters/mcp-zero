@@ -1,12 +1,14 @@
-"""Audit lifecycle hook — emits payload-free audit events."""
+"""Audit lifecycle hook — emits structured JSON audit events."""
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from collections import defaultdict
+from datetime import UTC, datetime
 
-from mcp_zero.audit.event import AuditEvent, AuditEventType, MaskingSummary
+from mcp_zero.audit.event import AuditEvent, AuditEventType, MaskingEventSummary, MaskingSummary
 from mcp_zero.context import HookContext
 from mcp_zero.pipeline.hooks import LifecycleHook
 
@@ -14,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 class AuditHook(LifecycleHook):
-    """Emits payload-free audit events at PRE_AUDIT and on errors.
+    """Emits structured JSON audit events at PRE_AUDIT and on errors.
 
     **Critical guarantee**: this hook never reads ``ctx.request_payload``
     or ``ctx.response_payload``.  Audit events contain only metadata and
@@ -23,8 +25,13 @@ class AuditHook(LifecycleHook):
     Registered at priority 150 so it runs after all masking hooks.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, logging_config: object | None = None) -> None:
         self._events: list[AuditEvent] = []
+        self._include: list[str] | None = None
+        if logging_config is not None and hasattr(logging_config, "include"):
+            inc = logging_config.include
+            if inc:
+                self._include = list(inc)
 
     @property
     def events(self) -> list[AuditEvent]:
@@ -32,18 +39,32 @@ class AuditHook(LifecycleHook):
         return list(self._events)
 
     async def on_pre_audit(self, ctx: HookContext) -> HookContext:
-        event_type = AuditEventType.RESPONSE if ctx.response_payload else AuditEventType.REQUEST
-        event = self._build_event(ctx, event_type)
+        event = self._build_event(ctx, AuditEventType.TOOL_INVOCATION)
         self._emit(event)
+
+        # Emit supplementary masking event when masking was applied
+        if ctx.masking_applied or ctx.output_masking_applied:
+            masking_event = self._build_event(ctx, AuditEventType.MASKING_EVENT)
+            self._emit(masking_event)
+
         return ctx
 
     async def on_error(self, ctx: HookContext, error: Exception) -> None:
-        event = self._build_event(ctx, AuditEventType.ERROR)
+        from mcp_zero.pipeline.errors import ShortCircuitError
+
+        # Policy deny → POLICY_DECISION, other errors → ERROR
+        if isinstance(error, ShortCircuitError) and error.deny:
+            event_type = AuditEventType.POLICY_DECISION
+        else:
+            event_type = AuditEventType.ERROR
+
+        event = self._build_event(ctx, event_type)
         event = AuditEvent(
             event_type=event.event_type,
             correlation_id=event.correlation_id,
             trace_id=event.trace_id,
             user_id=event.user_id,
+            user_groups=event.user_groups,
             server_name=event.server_name,
             tool_name=event.tool_name,
             policy_decision=event.policy_decision,
@@ -55,6 +76,11 @@ class AuditHook(LifecycleHook):
             duration_ms=event.duration_ms,
             error_type=type(error).__name__,
             error_message=str(error),
+            timestamp=event.timestamp,
+            transport=event.transport,
+            masking_events=event.masking_events,
+            request_size_bytes=event.request_size_bytes,
+            response_size_bytes=event.response_size_bytes,
         )
         self._emit(event)
 
@@ -77,14 +103,22 @@ class AuditHook(LifecycleHook):
         )
 
         user_id = ""
+        user_groups: list[str] = []
         if ctx.request.identity:
             user_id = ctx.request.identity.user_id
+            user_groups = list(ctx.request.identity.groups)
+
+        masking_event_summaries = self._build_masking_event_summaries(ctx.masking_events)
+
+        request_size = self._measure_size(ctx.request_payload)
+        response_size = self._measure_size(ctx.response_payload)
 
         return AuditEvent(
             event_type=event_type,
             correlation_id=ctx.request.correlation_id,
             trace_id=ctx.request.trace_id,
             user_id=user_id,
+            user_groups=user_groups,
             server_name=ctx.server_name,
             tool_name=ctx.tool_name,
             policy_decision=ctx.policy_decision.value,
@@ -94,6 +128,11 @@ class AuditHook(LifecycleHook):
             input_masking=input_masking,
             output_masking=output_masking,
             duration_ms=duration_ms,
+            timestamp=datetime.now(UTC).isoformat(),
+            transport=ctx.transport,
+            masking_events=masking_event_summaries,
+            request_size_bytes=request_size,
+            response_size_bytes=response_size,
         )
 
     @staticmethod
@@ -125,16 +164,29 @@ class AuditHook(LifecycleHook):
             masking_stage_completed=masking_stage_completed,
         )
 
+    @staticmethod
+    def _build_masking_event_summaries(masking_events: list) -> list[MaskingEventSummary]:
+        """Convert raw masking events to MaskingEventSummary instances."""
+        summaries: list[MaskingEventSummary] = []
+        for event in masking_events:
+            status = "success" if event.status != "failed" else "failed"
+            summaries.append(
+                MaskingEventSummary(
+                    entity_type=event.entity_type,
+                    count=event.count,
+                    status=status,
+                )
+            )
+        return summaries
+
+    @staticmethod
+    def _measure_size(payload: dict) -> int:
+        """Measure payload size in bytes without storing content."""
+        if not payload:
+            return 0
+        return len(json.dumps(payload).encode())
+
     def _emit(self, event: AuditEvent) -> None:
         self._events.append(event)
-        logger.info(
-            "AuditEvent type=%s correlation_id=%s user=%s server=%s tool=%s "
-            "policy=%s masking_completed=%s",
-            event.event_type.value,
-            event.correlation_id,
-            event.user_id,
-            event.server_name,
-            event.tool_name,
-            event.policy_decision,
-            event.input_masking.masking_stage_completed,
-        )
+        json_dict = event.to_json_dict(include=self._include or None)
+        logger.info(json.dumps(json_dict, default=str))

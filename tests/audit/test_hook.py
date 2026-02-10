@@ -1,8 +1,9 @@
-"""Tests for AuditHook — payload-free audit event emission."""
+"""Tests for AuditHook — structured JSON audit event emission."""
 
 from __future__ import annotations
 
 import dataclasses
+import json
 import logging
 
 import pytest
@@ -18,7 +19,7 @@ def _make_ctx(**kwargs) -> HookContext:
     """Build a HookContext with sensible defaults."""
     defaults = {
         "request": RequestContext(
-            identity=UserIdentity(user_id="test-user", email="test@example.com"),
+            identity=UserIdentity(user_id="test-user", email="test@example.com", groups=["dev"]),
         ),
         "server_name": "test-server",
         "tool_name": "test-tool",
@@ -30,37 +31,37 @@ def _make_ctx(**kwargs) -> HookContext:
 
 
 # ---------------------------------------------------------------------------
-# Normal flow — REQUEST and RESPONSE events
+# Normal flow — TOOL_INVOCATION events
 # ---------------------------------------------------------------------------
 
 
 class TestAuditHookNormalFlow:
     @pytest.mark.asyncio
-    async def test_emits_request_event(self):
+    async def test_emits_tool_invocation_event(self):
         hook = AuditHook()
         ctx = _make_ctx(request_payload={"message": "hello"})
         await hook.on_pre_audit(ctx)
 
         assert len(hook.events) == 1
         event = hook.events[0]
-        assert event.event_type == AuditEventType.REQUEST
+        assert event.event_type == AuditEventType.TOOL_INVOCATION
 
     @pytest.mark.asyncio
-    async def test_emits_response_event_when_response_present(self):
+    async def test_emits_tool_invocation_with_response(self):
         hook = AuditHook()
         ctx = _make_ctx(response_payload={"result": "ok"})
         await hook.on_pre_audit(ctx)
 
         assert len(hook.events) == 1
-        assert hook.events[0].event_type == AuditEventType.RESPONSE
+        assert hook.events[0].event_type == AuditEventType.TOOL_INVOCATION
 
     @pytest.mark.asyncio
-    async def test_request_event_when_no_payloads(self):
+    async def test_tool_invocation_when_no_payloads(self):
         hook = AuditHook()
         ctx = _make_ctx()
         await hook.on_pre_audit(ctx)
 
-        assert hook.events[0].event_type == AuditEventType.REQUEST
+        assert hook.events[0].event_type == AuditEventType.TOOL_INVOCATION
 
     @pytest.mark.asyncio
     async def test_metadata_populated(self):
@@ -99,6 +100,133 @@ class TestAuditHookNormalFlow:
         await hook.on_pre_audit(ctx)
 
         assert hook.events[0].duration_ms >= 0
+
+    @pytest.mark.asyncio
+    async def test_timestamp_populated(self):
+        hook = AuditHook()
+        ctx = _make_ctx()
+        await hook.on_pre_audit(ctx)
+
+        assert hook.events[0].timestamp != ""
+        assert "T" in hook.events[0].timestamp  # ISO-8601 format
+
+    @pytest.mark.asyncio
+    async def test_transport_populated(self):
+        hook = AuditHook()
+        ctx = _make_ctx(transport="http")
+        await hook.on_pre_audit(ctx)
+
+        assert hook.events[0].transport == "http"
+
+    @pytest.mark.asyncio
+    async def test_user_groups_populated(self):
+        hook = AuditHook()
+        ctx = _make_ctx(
+            request=RequestContext(
+                identity=UserIdentity(
+                    user_id="u1", groups=["admin", "dev"]
+                ),
+            ),
+        )
+        await hook.on_pre_audit(ctx)
+
+        assert hook.events[0].user_groups == ["admin", "dev"]
+
+    @pytest.mark.asyncio
+    async def test_request_size_bytes(self):
+        hook = AuditHook()
+        payload = {"message": "hello world"}
+        ctx = _make_ctx(request_payload=payload)
+        await hook.on_pre_audit(ctx)
+
+        expected_size = len(json.dumps(payload).encode())
+        assert hook.events[0].request_size_bytes == expected_size
+
+    @pytest.mark.asyncio
+    async def test_response_size_bytes(self):
+        hook = AuditHook()
+        payload = {"result": "ok"}
+        ctx = _make_ctx(response_payload=payload)
+        await hook.on_pre_audit(ctx)
+
+        expected_size = len(json.dumps(payload).encode())
+        assert hook.events[0].response_size_bytes == expected_size
+
+    @pytest.mark.asyncio
+    async def test_empty_payload_zero_size(self):
+        hook = AuditHook()
+        ctx = _make_ctx()
+        await hook.on_pre_audit(ctx)
+
+        assert hook.events[0].request_size_bytes == 0
+        assert hook.events[0].response_size_bytes == 0
+
+
+# ---------------------------------------------------------------------------
+# Supplementary MASKING_EVENT emission
+# ---------------------------------------------------------------------------
+
+
+class TestAuditHookMaskingEvent:
+    @pytest.mark.asyncio
+    async def test_emits_masking_event_when_input_masking_applied(self):
+        hook = AuditHook()
+        ctx = _make_ctx(
+            masking_applied=True,
+            masked_fields=["name"],
+            masking_events=[MaskingEvent(entity_type="PERSON", count=1, status="masked")],
+            masking_stage_completed=True,
+        )
+        await hook.on_pre_audit(ctx)
+
+        assert len(hook.events) == 2
+        assert hook.events[0].event_type == AuditEventType.TOOL_INVOCATION
+        assert hook.events[1].event_type == AuditEventType.MASKING_EVENT
+
+    @pytest.mark.asyncio
+    async def test_emits_masking_event_when_output_masking_applied(self):
+        hook = AuditHook()
+        ctx = _make_ctx(
+            output_masking_applied=True,
+            output_masked_fields=["content[0].text"],
+            masking_stage_completed=True,
+        )
+        await hook.on_pre_audit(ctx)
+
+        assert len(hook.events) == 2
+        assert hook.events[1].event_type == AuditEventType.MASKING_EVENT
+
+    @pytest.mark.asyncio
+    async def test_no_masking_event_when_no_masking(self):
+        hook = AuditHook()
+        ctx = _make_ctx()
+        await hook.on_pre_audit(ctx)
+
+        assert len(hook.events) == 1
+        assert hook.events[0].event_type == AuditEventType.TOOL_INVOCATION
+
+    @pytest.mark.asyncio
+    async def test_masking_event_summaries_populated(self):
+        masking_events = [
+            MaskingEvent(entity_type="PERSON", count=2, status="masked"),
+            MaskingEvent(entity_type="SSN", count=1, status="failed"),
+        ]
+        hook = AuditHook()
+        ctx = _make_ctx(
+            masking_applied=True,
+            masked_fields=["name", "ssn"],
+            masking_events=masking_events,
+            masking_stage_completed=True,
+        )
+        await hook.on_pre_audit(ctx)
+
+        event = hook.events[0]  # TOOL_INVOCATION
+        assert len(event.masking_events) == 2
+        assert event.masking_events[0].entity_type == "PERSON"
+        assert event.masking_events[0].count == 2
+        assert event.masking_events[0].status == "success"
+        assert event.masking_events[1].entity_type == "SSN"
+        assert event.masking_events[1].status == "failed"
 
 
 # ---------------------------------------------------------------------------
@@ -189,7 +317,7 @@ class TestAuditHookMaskingMetadata:
 
 class TestAuditHookErrorPath:
     @pytest.mark.asyncio
-    async def test_emits_error_event(self):
+    async def test_emits_policy_decision_on_deny(self):
         hook = AuditHook()
         ctx = _make_ctx(short_circuited=True, short_circuit_reason="denied")
         error = ShortCircuitError("denied by policy", deny=True)
@@ -197,9 +325,30 @@ class TestAuditHookErrorPath:
 
         assert len(hook.events) == 1
         event = hook.events[0]
-        assert event.event_type == AuditEventType.ERROR
+        assert event.event_type == AuditEventType.POLICY_DECISION
         assert event.error_type == "ShortCircuitError"
         assert event.error_message == "denied by policy"
+
+    @pytest.mark.asyncio
+    async def test_emits_error_for_non_policy_errors(self):
+        hook = AuditHook()
+        ctx = _make_ctx()
+        error = RuntimeError("something broke")
+        await hook.on_error(ctx, error)
+
+        event = hook.events[0]
+        assert event.event_type == AuditEventType.ERROR
+        assert event.error_type == "RuntimeError"
+        assert event.error_message == "something broke"
+
+    @pytest.mark.asyncio
+    async def test_emits_error_for_non_deny_short_circuit(self):
+        hook = AuditHook()
+        ctx = _make_ctx()
+        error = ShortCircuitError("not a deny", deny=False)
+        await hook.on_error(ctx, error)
+
+        assert hook.events[0].event_type == AuditEventType.ERROR
 
     @pytest.mark.asyncio
     async def test_error_event_has_metadata(self):
@@ -214,15 +363,31 @@ class TestAuditHookErrorPath:
         assert event.server_name == "test-server"
 
     @pytest.mark.asyncio
-    async def test_error_event_generic_exception(self):
+    async def test_error_event_has_timestamp(self):
         hook = AuditHook()
         ctx = _make_ctx()
-        error = RuntimeError("something broke")
+        error = RuntimeError("fail")
         await hook.on_error(ctx, error)
 
-        event = hook.events[0]
-        assert event.error_type == "RuntimeError"
-        assert event.error_message == "something broke"
+        assert hook.events[0].timestamp != ""
+
+    @pytest.mark.asyncio
+    async def test_error_event_has_transport(self):
+        hook = AuditHook()
+        ctx = _make_ctx(transport="stdio")
+        error = RuntimeError("fail")
+        await hook.on_error(ctx, error)
+
+        assert hook.events[0].transport == "stdio"
+
+    @pytest.mark.asyncio
+    async def test_error_event_has_user_groups(self):
+        hook = AuditHook()
+        ctx = _make_ctx()
+        error = RuntimeError("fail")
+        await hook.on_error(ctx, error)
+
+        assert hook.events[0].user_groups == ["dev"]
 
 
 # ---------------------------------------------------------------------------
@@ -277,6 +442,93 @@ class TestAuditHookPayloadExclusion:
 
 
 # ---------------------------------------------------------------------------
+# JSON logging output
+# ---------------------------------------------------------------------------
+
+
+class TestAuditHookJsonOutput:
+    @pytest.mark.asyncio
+    async def test_logs_valid_json(self, caplog):
+        hook = AuditHook()
+        ctx = _make_ctx()
+        with caplog.at_level(logging.INFO, logger="mcp_zero.audit.hook"):
+            await hook.on_pre_audit(ctx)
+
+        assert len(caplog.records) >= 1
+        parsed = json.loads(caplog.records[0].message)
+        assert parsed["event_type"] == "mcp_tool_invocation"
+        assert "correlation_id" in parsed
+
+    @pytest.mark.asyncio
+    async def test_json_has_user_nested(self, caplog):
+        hook = AuditHook()
+        ctx = _make_ctx()
+        with caplog.at_level(logging.INFO, logger="mcp_zero.audit.hook"):
+            await hook.on_pre_audit(ctx)
+
+        parsed = json.loads(caplog.records[0].message)
+        assert "user" in parsed
+        assert parsed["user"]["user_id"] == "test-user"
+        assert parsed["user"]["groups"] == ["dev"]
+
+
+# ---------------------------------------------------------------------------
+# Field filtering via LoggingConfig
+# ---------------------------------------------------------------------------
+
+
+class _FakeLoggingConfig:
+    def __init__(self, include: list[str]):
+        self.include = include
+
+
+class TestAuditHookFieldFiltering:
+    @pytest.mark.asyncio
+    async def test_include_filters_json_output(self, caplog):
+        config = _FakeLoggingConfig(include=["server_name", "tool_name"])
+        hook = AuditHook(logging_config=config)
+        ctx = _make_ctx()
+        with caplog.at_level(logging.INFO, logger="mcp_zero.audit.hook"):
+            await hook.on_pre_audit(ctx)
+
+        parsed = json.loads(caplog.records[0].message)
+        # Always included
+        assert "event_type" in parsed
+        assert "timestamp" in parsed
+        assert "correlation_id" in parsed
+        # Explicitly included
+        assert "server_name" in parsed
+        assert "tool_name" in parsed
+        # Filtered out
+        assert "transport" not in parsed
+        assert "user" not in parsed
+
+    @pytest.mark.asyncio
+    async def test_empty_include_no_filtering(self, caplog):
+        config = _FakeLoggingConfig(include=[])
+        hook = AuditHook(logging_config=config)
+        ctx = _make_ctx()
+        with caplog.at_level(logging.INFO, logger="mcp_zero.audit.hook"):
+            await hook.on_pre_audit(ctx)
+
+        parsed = json.loads(caplog.records[0].message)
+        # All fields present when include is empty
+        assert "transport" in parsed
+        assert "user" in parsed
+
+    @pytest.mark.asyncio
+    async def test_no_config_no_filtering(self, caplog):
+        hook = AuditHook()
+        ctx = _make_ctx()
+        with caplog.at_level(logging.INFO, logger="mcp_zero.audit.hook"):
+            await hook.on_pre_audit(ctx)
+
+        parsed = json.loads(caplog.records[0].message)
+        assert "transport" in parsed
+        assert "user" in parsed
+
+
+# ---------------------------------------------------------------------------
 # Debug logging safety
 # ---------------------------------------------------------------------------
 
@@ -312,3 +564,17 @@ class TestAuditHookLoggingSafety:
         full_log = caplog.text
         assert self.PII_STRING not in full_log
         assert "987-65-4321" not in full_log
+
+    @pytest.mark.asyncio
+    async def test_json_output_no_pii(self, caplog):
+        """JSON log output must not contain PII from payloads."""
+        hook = AuditHook()
+        ctx = _make_ctx(
+            request_payload={"message": self.PII_STRING},
+        )
+        with caplog.at_level(logging.INFO, logger="mcp_zero.audit.hook"):
+            await hook.on_pre_audit(ctx)
+
+        for record in caplog.records:
+            assert self.PII_STRING not in record.message
+            assert "987-65-4321" not in record.message

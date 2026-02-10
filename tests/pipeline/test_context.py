@@ -126,3 +126,17 @@ class TestHookContext:
     def test_response_payload(self):
         ctx = HookContext(response_payload={"result": "ok"})
         assert ctx.response_payload["result"] == "ok"
+
+    def test_transport_default(self):
+        ctx = HookContext()
+        assert ctx.transport == ""
+
+    def test_transport_custom_value(self):
+        ctx = HookContext(transport="http")
+        assert ctx.transport == "http"
+
+    def test_evolve_transport(self):
+        ctx = HookContext(transport="http")
+        ctx2 = ctx.evolve(transport="stdio")
+        assert ctx.transport == "http"
+        assert ctx2.transport == "stdio"

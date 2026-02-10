@@ -119,11 +119,14 @@ class TestEndToEndWithMasking:
         result = await pipeline.execute(ctx)
 
         assert result.success
-        assert len(audit_hook.events) == 1
+        # TOOL_INVOCATION + MASKING_EVENT
+        assert len(audit_hook.events) == 2
         event = audit_hook.events[0]
+        assert event.event_type == AuditEventType.TOOL_INVOCATION
         assert event.input_masking.masking_stage_completed is True
         assert event.input_masking.applied is True
         assert "PERSON" in event.input_masking.entity_types
+        assert audit_hook.events[1].event_type == AuditEventType.MASKING_EVENT
 
     @pytest.mark.asyncio
     async def test_no_pii_masking_still_completes_stage(self):
@@ -145,7 +148,10 @@ class TestEndToEndWithMasking:
         result = await pipeline.execute(ctx)
 
         assert result.success
+        # Only TOOL_INVOCATION, no MASKING_EVENT since masking_applied is False
+        assert len(audit_hook.events) == 1
         event = audit_hook.events[0]
+        assert event.event_type == AuditEventType.TOOL_INVOCATION
         assert event.input_masking.masking_stage_completed is True
         assert event.input_masking.applied is False
 
@@ -166,7 +172,9 @@ class TestEndToEndWithMasking:
         result = await pipeline.execute(ctx)
 
         assert result.success
+        assert len(audit_hook.events) == 1
         event = audit_hook.events[0]
+        assert event.event_type == AuditEventType.TOOL_INVOCATION
         assert event.input_masking.masking_stage_completed is True
 
 
@@ -178,7 +186,7 @@ class TestEndToEndWithMasking:
 class TestMaskingFailurePath:
     @pytest.mark.asyncio
     async def test_engine_failure_sets_masking_not_completed(self):
-        """Masking engine failure → on_error fires → masking_stage_completed=False."""
+        """Masking engine failure -> ShortCircuitError(deny=True) -> POLICY_DECISION."""
         engine = AsyncMock()
         engine.mask_text.side_effect = MaskingEngineError("engine crashed", engine="presidio")
         masking_hook = MaskingHook(engine, _make_config())
@@ -194,10 +202,11 @@ class TestMaskingFailurePath:
         result = await pipeline.execute(ctx)
 
         assert not result.success
-        # on_error should have fired
+        # on_error should have fired — masking failures are wrapped in
+        # ShortCircuitError(deny=True), so they emit POLICY_DECISION
         assert len(audit_hook.events) == 1
         event = audit_hook.events[0]
-        assert event.event_type == AuditEventType.ERROR
+        assert event.event_type == AuditEventType.POLICY_DECISION
         assert event.input_masking.masking_stage_completed is False
 
     @pytest.mark.asyncio
@@ -239,8 +248,8 @@ class _DenyHook(LifecycleHook):
 
 class TestGovernanceDenyPath:
     @pytest.mark.asyncio
-    async def test_deny_fires_error_audit_with_masking_not_completed(self):
-        """Governance deny → ShortCircuitError → on_error → masking_stage_completed=False."""
+    async def test_deny_fires_policy_decision_audit(self):
+        """Governance deny -> ShortCircuitError -> on_error -> POLICY_DECISION event."""
         deny_hook = _DenyHook()
         audit_hook = AuditHook()
 
@@ -256,7 +265,7 @@ class TestGovernanceDenyPath:
         assert not result.success
         assert len(audit_hook.events) == 1
         event = audit_hook.events[0]
-        assert event.event_type == AuditEventType.ERROR
+        assert event.event_type == AuditEventType.POLICY_DECISION
         assert event.input_masking.masking_stage_completed is False
         # Payload not in event
         assert "sensitive" not in repr(event)
@@ -281,14 +290,14 @@ class TestGovernanceDenyPath:
 
 
 # ---------------------------------------------------------------------------
-# Two-phase audit (REQUEST then RESPONSE)
+# Two-phase audit (both emit TOOL_INVOCATION)
 # ---------------------------------------------------------------------------
 
 
 class TestTwoPhaseAudit:
     @pytest.mark.asyncio
     async def test_request_then_response_events(self):
-        """First execution → REQUEST event, second with response → RESPONSE event."""
+        """Both phases emit TOOL_INVOCATION + supplementary MASKING_EVENT when masking applies."""
         engine = AsyncMock()
         engine.mask_text.return_value = MaskingResult(
             masked_text="<PERSON>",
@@ -305,17 +314,26 @@ class TestTwoPhaseAudit:
 
         pipeline = Pipeline(registry)
 
-        # Phase 1: request
+        # Phase 1: request (input masking applied)
         ctx_req = _make_ctx(request_payload={"name": "John"})
         await pipeline.execute(ctx_req)
 
-        # Phase 2: response
+        # Phase 2: response (output masking applied by masking hook)
         ctx_resp = _make_ctx(
             response_payload={"result": "John"},
         )
         await pipeline.execute(ctx_resp)
 
-        assert len(audit_hook.events) == 2
-        assert audit_hook.events[0].event_type == AuditEventType.REQUEST
-        assert audit_hook.events[0].input_masking.applied is True
-        assert audit_hook.events[1].event_type == AuditEventType.RESPONSE
+        # Phase 1: TOOL_INVOCATION + MASKING_EVENT (input masking applied)
+        # Phase 2: TOOL_INVOCATION + MASKING_EVENT (output masking applied)
+        #          + additional TOOL_INVOCATION from on_pre_audit of second pipeline.execute
+        # The masking mock returns has_masked=True for both phases
+        tool_events = [
+            e for e in audit_hook.events if e.event_type == AuditEventType.TOOL_INVOCATION
+        ]
+        masking_events = [
+            e for e in audit_hook.events if e.event_type == AuditEventType.MASKING_EVENT
+        ]
+        assert len(tool_events) >= 2
+        assert tool_events[0].input_masking.applied is True
+        assert len(masking_events) >= 1

@@ -129,7 +129,8 @@ def _build_pipeline(
                 ", ".join(policy_config.masking.presidio.entities),
             )
 
-    audit_hook = AuditHook()
+    logging_config = policy_config.logging if policy_config else None
+    audit_hook = AuditHook(logging_config=logging_config)
     registry.register(audit_hook, priority=150)
 
     registry.build()

@@ -85,6 +85,7 @@ class ProxyServer:
             tool_name=tool_name,
             request_payload={"arguments": arguments or {}},
             extras={"authorization": auth_header_var.get("")},
+            transport=config.transport.value,
         )
 
         if self._pipeline:
