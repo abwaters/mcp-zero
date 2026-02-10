@@ -6,7 +6,8 @@ from unittest.mock import AsyncMock
 import pytest
 from mcp.types import CallToolResult, ListToolsResult, TextContent, Tool
 
-from mcp_zero.context import HookContext, PolicyDecision
+from mcp_zero.context import HookContext, PolicyDecision, RequestContext, UserIdentity
+from mcp_zero.identity.errors import TokenExchangeError
 from mcp_zero.pipeline import Pipeline, PipelineResult
 from mcp_zero.proxy.auth import AuthProvider
 from mcp_zero.proxy.errors import RoutingError, UpstreamError
@@ -269,3 +270,59 @@ class TestProxyServerWithAuth:
         # Verify auth token was passed to get_session
         call_kwargs = mgr.get_session.call_args[1]
         assert call_kwargs["auth_token"] == "obo-token-123"
+
+    @pytest.mark.asyncio
+    async def test_uses_enriched_context_from_pipeline(self):
+        """Auth provider receives the pipeline-enriched context, not the original."""
+        mgr = ServerManager(make_configs())
+
+        mock_session = AsyncMock()
+        mock_session.call_tool = AsyncMock(return_value=make_call_result("ok"))
+        mgr.get_session = AsyncMock(return_value=mock_session)
+
+        # Pipeline enriches context with identity and raw_token
+        enriched_request = RequestContext(
+            identity=UserIdentity(user_id="user-1"),
+            raw_token="enriched-jwt",
+        )
+        enriched_ctx = HookContext(
+            request=enriched_request,
+            policy_decision=PolicyDecision.PENDING,
+        )
+        mock_pipeline = AsyncMock(spec=Pipeline)
+        mock_pipeline.execute = AsyncMock(
+            return_value=PipelineResult(context=enriched_ctx, success=True)
+        )
+
+        captured_context = {}
+
+        async def capture_get_token(server_name, context):
+            captured_context["ctx"] = context
+            return None
+
+        mock_auth = AsyncMock(spec=AuthProvider)
+        mock_auth.get_token = AsyncMock(side_effect=capture_get_token)
+
+        proxy = ProxyServer(mgr, pipeline=mock_pipeline, auth_provider=mock_auth)
+        await proxy._call_tool("weather__get_weather", {})
+
+        # Auth provider should have received the enriched context
+        assert captured_context["ctx"].raw_token == "enriched-jwt"
+        assert captured_context["ctx"].identity is not None
+        assert captured_context["ctx"].identity.user_id == "user-1"
+
+    @pytest.mark.asyncio
+    async def test_token_exchange_error_returns_denial(self):
+        mgr = ServerManager(make_configs())
+
+        mock_auth = AsyncMock(spec=AuthProvider)
+        mock_auth.get_token = AsyncMock(
+            side_effect=TokenExchangeError("exchange failed", audience="api://weather")
+        )
+
+        proxy = ProxyServer(mgr, auth_provider=mock_auth)
+        result = await proxy._call_tool("weather__get_weather", {})
+
+        assert len(result) == 1
+        assert "denied" in result[0].text.lower()
+        assert "exchange failed" in result[0].text

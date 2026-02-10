@@ -4,6 +4,7 @@ from mcp_zero.identity.config import ClaimMapping, IdentityConfig
 from mcp_zero.identity.errors import (
     IdentityError,
     JWKSFetchError,
+    TokenExchangeError,
     TokenExpiredError,
     TokenValidationError,
 )
@@ -16,6 +17,7 @@ __all__ = [
     "IdentityConfig",
     "IdentityError",
     "IdentityHook",
+    "TokenExchangeError",
     "JWKSClient",
     "JWKSFetchError",
     "JWTValidator",

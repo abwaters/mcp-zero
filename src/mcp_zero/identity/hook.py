@@ -50,7 +50,7 @@ class IdentityHook(LifecycleHook):
             email=claims.email,
             groups=list(claims.groups),
         )
-        new_request = replace(ctx.request, identity=identity)
+        new_request = replace(ctx.request, identity=identity, raw_token=token)
         return ctx.evolve(request=new_request)
 
     @staticmethod
