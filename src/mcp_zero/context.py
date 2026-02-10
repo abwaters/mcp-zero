@@ -10,6 +10,15 @@ from typing import Any
 
 
 @dataclass(frozen=True)
+class UserIdentity:
+    """Resolved user identity from a validated JWT token."""
+
+    user_id: str
+    email: str | None = None
+    groups: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
 class RequestContext:
     """Per-request context carrying correlation ID and user identity.
 
@@ -20,9 +29,7 @@ class RequestContext:
 
     correlation_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     trace_id: str = ""
-    user_id: str | None = None
-    user_email: str | None = None
-    user_groups: list[str] = field(default_factory=list)
+    identity: UserIdentity | None = None
 
     def __post_init__(self) -> None:
         if not self.trace_id:
@@ -32,9 +39,7 @@ class RequestContext:
         """Create a child context with a new correlation ID but the same trace."""
         return RequestContext(
             trace_id=self.trace_id,
-            user_id=self.user_id,
-            user_email=self.user_email,
-            user_groups=list(self.user_groups),
+            identity=self.identity,
         )
 
 

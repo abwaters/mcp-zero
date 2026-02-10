@@ -251,6 +251,20 @@ class TestJWTValidator:
         assert claims.groups == []
 
     @pytest.mark.asyncio
+    async def test_not_yet_valid_token(self):
+        """Token with nbf in the future is rejected with reason not_yet_valid."""
+        config = _make_config()
+        jwks_client = AsyncMock()
+        jwks_client.get_signing_keys = AsyncMock(return_value=[_make_pyjwk(_PUBLIC_KEY)])
+
+        validator = JWTValidator(config, jwks_client)
+        token = _sign_token(_valid_claims(nbf=int(time.time()) + 9999))
+
+        with pytest.raises(TokenValidationError, match="not yet valid") as exc_info:
+            await validator.validate_token(token)
+        assert exc_info.value.reason == "not_yet_valid"
+
+    @pytest.mark.asyncio
     async def test_multiple_keys_tries_each(self):
         """With multiple keys, the correct one is found."""
         config = _make_config()

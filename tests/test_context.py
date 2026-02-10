@@ -4,7 +4,7 @@ import re
 
 import pytest
 
-from mcp_zero.context import RequestContext
+from mcp_zero.context import RequestContext, UserIdentity
 
 UUID4_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 
@@ -47,14 +47,17 @@ class TestRequestContext:
         assert child.trace_id == parent.trace_id
 
     def test_child_context_inherits_user_identity(self):
-        parent = RequestContext(user_id="u1", user_email="u@x.com", user_groups=["admin"])
+        identity = UserIdentity(user_id="u1", email="u@x.com", groups=["admin"])
+        parent = RequestContext(identity=identity)
         child = parent.child_context()
-        assert child.user_id == "u1"
-        assert child.user_email == "u@x.com"
-        assert child.user_groups == ["admin"]
+        assert child.identity is not None
+        assert child.identity.user_id == "u1"
+        assert child.identity.email == "u@x.com"
+        assert child.identity.groups == ["admin"]
 
-    def test_child_context_groups_are_copied(self):
-        parent = RequestContext(user_groups=["a", "b"])
+    def test_child_context_identity_is_same_frozen_instance(self):
+        identity = UserIdentity(user_id="u1", groups=["a", "b"])
+        parent = RequestContext(identity=identity)
         child = parent.child_context()
-        assert child.user_groups is not parent.user_groups
-        assert child.user_groups == ["a", "b"]
+        # UserIdentity is frozen, so sharing the same instance is safe
+        assert child.identity is parent.identity

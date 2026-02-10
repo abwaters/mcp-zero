@@ -4,7 +4,7 @@ import time
 
 import pytest
 
-from mcp_zero.context import HookContext, PolicyDecision, RequestContext
+from mcp_zero.context import HookContext, PolicyDecision, RequestContext, UserIdentity
 
 
 class TestPolicyDecision:
@@ -41,14 +41,14 @@ class TestHookContext:
         assert ctx.extras == {}
 
     def test_custom_values(self):
-        req = RequestContext(user_id="u1")
+        req = RequestContext(identity=UserIdentity(user_id="u1"))
         ctx = HookContext(
             request=req,
             server_name="my-server",
             tool_name="my-tool",
             policy_decision=PolicyDecision.ALLOW,
         )
-        assert ctx.request.user_id == "u1"
+        assert ctx.request.identity.user_id == "u1"
         assert ctx.server_name == "my-server"
         assert ctx.tool_name == "my-tool"
         assert ctx.policy_decision == PolicyDecision.ALLOW
