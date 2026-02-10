@@ -23,6 +23,7 @@ from mcp_zero.governance.errors import (
     PolicyReferenceError,
     PolicyValidationError,
 )
+from mcp_zero.governance.hook import GovernanceHook
 from mcp_zero.governance.loader import (
     convert_to_identity_config,
     convert_to_server_configs,
@@ -31,6 +32,7 @@ from mcp_zero.governance.loader import (
 
 __all__ = [
     "EvaluationResult",
+    "GovernanceHook",
     "GovernanceError",
     "IdentityProviderConfig",
     "LoggingConfig",

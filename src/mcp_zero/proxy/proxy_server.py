@@ -91,10 +91,18 @@ class ProxyServer:
             result = await self._pipeline.execute(hook_ctx)
             hook_ctx = result.context
             if hook_ctx.policy_decision == PolicyDecision.DENY:
+                correlation_id = hook_ctx.request.correlation_id
+                logger.warning(
+                    "Request denied: %s (correlation_id=%s, server=%s, tool=%s)",
+                    hook_ctx.short_circuit_reason,
+                    correlation_id,
+                    server_name,
+                    tool_name,
+                )
                 return [
                     types.TextContent(
                         type="text",
-                        text=f"Request denied: {hook_ctx.short_circuit_reason}",
+                        text=f"Access denied (correlation_id={correlation_id})",
                     )
                 ]
 

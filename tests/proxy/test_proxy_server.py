@@ -214,7 +214,9 @@ class TestProxyServerWithPipeline:
         mgr = ServerManager(make_configs())
 
         mock_pipeline = AsyncMock(spec=Pipeline)
+        deny_request = RequestContext()
         deny_ctx = HookContext(
+            request=deny_request,
             policy_decision=PolicyDecision.DENY,
             short_circuit_reason="blocked by policy",
         )
@@ -226,8 +228,31 @@ class TestProxyServerWithPipeline:
         result = await proxy._call_tool("weather__get_weather", {})
 
         assert len(result) == 1
-        assert "denied" in result[0].text.lower()
-        assert "blocked by policy" in result[0].text
+        assert "Access denied" in result[0].text
+        assert deny_request.correlation_id in result[0].text
+        # Policy internals must NOT leak to the client
+        assert "blocked by policy" not in result[0].text
+
+    @pytest.mark.asyncio
+    async def test_deny_response_includes_correlation_id(self):
+        mgr = ServerManager(make_configs())
+
+        mock_pipeline = AsyncMock(spec=Pipeline)
+        deny_request = RequestContext()
+        deny_ctx = HookContext(
+            request=deny_request,
+            policy_decision=PolicyDecision.DENY,
+            short_circuit_reason="internal reason",
+        )
+        mock_pipeline.execute = AsyncMock(
+            return_value=PipelineResult(context=deny_ctx, success=False)
+        )
+
+        proxy = ProxyServer(mgr, pipeline=mock_pipeline)
+        result = await proxy._call_tool("weather__get_weather", {})
+
+        expected = f"Access denied (correlation_id={deny_request.correlation_id})"
+        assert result[0].text == expected
 
     @pytest.mark.asyncio
     async def test_pipeline_runs_post_hooks(self):
