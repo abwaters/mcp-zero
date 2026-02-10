@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 import httpx
 
 from mcp_zero.identity.errors import TokenExchangeError
+from mcp_zero.url_validation import require_https
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,7 @@ class OBOConfig:
     client_id: str
     client_secret: str
     cache_ttl: int = 300  # seconds before expiry to consider token stale
+    allow_insecure: bool = False
 
     def __post_init__(self) -> None:
         if not self.token_endpoint:
@@ -33,6 +35,8 @@ class OBOConfig:
             raise ValueError("client_id is required")
         if not self.client_secret:
             raise ValueError("client_secret is required")
+        if not self.allow_insecure:
+            require_https(self.token_endpoint, "token_endpoint")
 
 
 @dataclass(frozen=True)

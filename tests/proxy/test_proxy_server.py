@@ -26,11 +26,13 @@ def make_configs():
             max_retries=1,
             retry_delay_seconds=0.01,
             timeout_seconds=5.0,
+            allow_insecure=True,
         ),
         ServerConfig(
             name="db",
             transport=TransportType.HTTP,
             url="http://db:8080",
+            allow_insecure=True,
         ),
     ]
 
@@ -133,6 +135,7 @@ class TestProxyServerCallTool:
                 max_retries=1,
                 retry_delay_seconds=0.01,
                 timeout_seconds=5.0,
+                allow_insecure=True,
             ),
         ]
         mgr = ServerManager(configs)
@@ -167,6 +170,7 @@ class TestProxyServerCallTool:
                 max_retries=1,
                 retry_delay_seconds=0.01,
                 timeout_seconds=5.0,
+                allow_insecure=True,
             ),
         ]
         mgr = ServerManager(configs)
@@ -191,6 +195,7 @@ class TestProxyServerCallTool:
                 url="http://weather:8080",
                 max_retries=0,
                 timeout_seconds=0.01,
+                allow_insecure=True,
             ),
         ]
         mgr = ServerManager(configs)

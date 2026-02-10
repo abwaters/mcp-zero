@@ -70,3 +70,19 @@ class TestIdentityConfig:
             jwks_cache_ttl=300,
         )
         assert cfg.jwks_cache_ttl == 300
+
+    def test_http_issuer_rejected(self):
+        with pytest.raises(ValueError, match="must use https://"):
+            IdentityConfig(issuer="http://okta.example.com", audience="my-app")
+
+    def test_http_issuer_allowed_with_allow_insecure(self):
+        cfg = IdentityConfig(
+            issuer="http://okta.example.com",
+            audience="my-app",
+            allow_insecure=True,
+        )
+        assert cfg.issuer == "http://okta.example.com"
+
+    def test_https_issuer_always_accepted(self):
+        cfg = IdentityConfig(issuer="https://okta.example.com", audience="my-app")
+        assert cfg.issuer == "https://okta.example.com"

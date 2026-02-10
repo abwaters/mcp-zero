@@ -18,7 +18,7 @@ class TestTransportState:
 
 class TestMCPTransportABC:
     def test_cannot_instantiate(self):
-        cfg = ServerConfig(name="test", transport=TransportType.HTTP, url="http://localhost")
+        cfg = ServerConfig(name="test", transport=TransportType.HTTP, url="https://localhost")
         with pytest.raises(TypeError, match="abstract"):
             MCPTransport(cfg)  # type: ignore[abstract]
 
@@ -32,7 +32,7 @@ class TestMCPTransportABC:
             async def disconnect(self):
                 pass
 
-        cfg = ServerConfig(name="test", transport=TransportType.HTTP, url="http://localhost")
+        cfg = ServerConfig(name="test", transport=TransportType.HTTP, url="https://localhost")
         t = DummyTransport(cfg)
         assert t.state == TransportState.DISCONNECTED
         assert t.config is cfg
@@ -45,7 +45,7 @@ class TestMCPTransportABC:
             async def disconnect(self):
                 pass
 
-        cfg = ServerConfig(name="test", transport=TransportType.HTTP, url="http://localhost")
+        cfg = ServerConfig(name="test", transport=TransportType.HTTP, url="https://localhost")
         t = DummyTransport(cfg)
         with pytest.raises(TransportClosedError, match="not connected"):
             _ = t.session
@@ -64,7 +64,7 @@ class TestMCPTransportABC:
                 nonlocal disconnected
                 disconnected = True
 
-        cfg = ServerConfig(name="test", transport=TransportType.HTTP, url="http://localhost")
+        cfg = ServerConfig(name="test", transport=TransportType.HTTP, url="https://localhost")
         async with DummyTransport(cfg) as t:
             assert connected
             assert isinstance(t, DummyTransport)
@@ -82,7 +82,7 @@ class TestMCPTransportABC:
                 nonlocal disconnected
                 disconnected = True
 
-        cfg = ServerConfig(name="test", transport=TransportType.HTTP, url="http://localhost")
+        cfg = ServerConfig(name="test", transport=TransportType.HTTP, url="https://localhost")
         with pytest.raises(RuntimeError):
             async with DummyTransport(cfg):
                 raise RuntimeError("boom")

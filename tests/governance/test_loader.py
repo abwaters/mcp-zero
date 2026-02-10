@@ -26,7 +26,12 @@ def _minimal_policy() -> dict:
         "version": 1,
         "default": "deny",
         "servers": [
-            {"name": "api", "transport": "http", "url": "http://localhost:9000"},
+            {
+                "name": "api",
+                "transport": "http",
+                "url": "https://localhost:9000",
+                "allow_insecure": False,
+            },
         ],
         "policies": [
             {
@@ -54,7 +59,7 @@ def _full_policy() -> dict:
             {
                 "name": "api",
                 "transport": "http",
-                "url": "http://localhost:9000",
+                "url": "https://localhost:9000",
                 "token_exchange": True,
                 "target_audience": "api://server1",
                 "required_scopes": ["read", "write"],
@@ -263,8 +268,8 @@ class TestDuplicateDetection:
     def test_duplicate_server_names(self, tmp_path):
         data = _minimal_policy()
         data["servers"] = [
-            {"name": "api", "transport": "http", "url": "http://a"},
-            {"name": "api", "transport": "http", "url": "http://b"},
+            {"name": "api", "transport": "http", "url": "https://a"},
+            {"name": "api", "transport": "http", "url": "https://b"},
         ]
         path = tmp_path / "policy.yaml"
         path.write_text(yaml.dump(data))
@@ -379,7 +384,7 @@ class TestConvertToServerConfigs:
         assert isinstance(configs[0], ServerConfig)
         assert configs[0].name == "api"
         assert configs[0].transport == TransportType.HTTP
-        assert configs[0].url == "http://localhost:9000"
+        assert configs[0].url == "https://localhost:9000"
 
     def test_full_conversion(self, tmp_path):
         path = tmp_path / "policy.yaml"
@@ -443,3 +448,72 @@ class TestConvertToIdentityConfig:
         assert config.claim_mapping.user_id == "oid"
         assert config.claim_mapping.email == "upn"
         assert config.claim_mapping.groups == "roles"
+
+
+class TestHTTPSEnforcement:
+    def test_http_server_url_rejected_via_convert(self, tmp_path):
+        data = _minimal_policy()
+        data["servers"] = [
+            {"name": "api", "transport": "http", "url": "http://localhost:9000"},
+        ]
+        path = tmp_path / "policy.yaml"
+        path.write_text(yaml.dump(data))
+        policy = load_policy_file(str(path))
+        with pytest.raises(ValueError, match="must use https://"):
+            convert_to_server_configs(policy)
+
+    def test_http_server_url_allowed_with_allow_insecure(self, tmp_path):
+        data = _minimal_policy()
+        data["servers"] = [
+            {
+                "name": "api",
+                "transport": "http",
+                "url": "http://localhost:9000",
+                "allow_insecure": True,
+            },
+        ]
+        path = tmp_path / "policy.yaml"
+        path.write_text(yaml.dump(data))
+        policy = load_policy_file(str(path))
+        configs = convert_to_server_configs(policy)
+        assert configs[0].url == "http://localhost:9000"
+
+    def test_http_identity_issuer_rejected(self, tmp_path):
+        data = _minimal_policy()
+        data["identity"] = {
+            "provider": "okta",
+            "issuer": "http://example.okta.com",
+            "audience": "my-app",
+        }
+        path = tmp_path / "policy.yaml"
+        path.write_text(yaml.dump(data))
+        with pytest.raises(PolicyValidationError, match="must use https://"):
+            load_policy_file(str(path))
+
+    def test_http_identity_issuer_allowed_with_allow_insecure(self, tmp_path):
+        data = _minimal_policy()
+        data["identity"] = {
+            "provider": "okta",
+            "issuer": "http://example.okta.com",
+            "audience": "my-app",
+            "allow_insecure": True,
+        }
+        path = tmp_path / "policy.yaml"
+        path.write_text(yaml.dump(data))
+        policy = load_policy_file(str(path))
+        assert policy.identity.issuer == "http://example.okta.com"
+
+    def test_allow_insecure_passes_through_to_identity_config(self, tmp_path):
+        data = _minimal_policy()
+        data["identity"] = {
+            "provider": "okta",
+            "issuer": "http://example.okta.com",
+            "audience": "my-app",
+            "allow_insecure": True,
+        }
+        path = tmp_path / "policy.yaml"
+        path.write_text(yaml.dump(data))
+        policy = load_policy_file(str(path))
+        config = convert_to_identity_config(policy)
+        assert config.issuer == "http://example.okta.com"
+        assert config.allow_insecure is True

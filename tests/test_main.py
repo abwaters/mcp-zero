@@ -9,6 +9,7 @@ from mcp_zero.governance.errors import PolicyFileError
 from mcp_zero.identity.config import IdentityConfig
 from mcp_zero.main import (
     _build_pipeline,
+    _is_insecure_allowed,
     _load_policy_and_configs,
     _load_server_configs,
     run,
@@ -17,23 +18,66 @@ from mcp_zero.pipeline import Pipeline
 from mcp_zero.proxy.middleware import AuthHeaderMiddleware
 
 
+class TestIsInsecureAllowed:
+    def test_not_set(self, monkeypatch):
+        monkeypatch.delenv("MCP_ALLOW_INSECURE", raising=False)
+        assert _is_insecure_allowed() is False
+
+    def test_empty(self, monkeypatch):
+        monkeypatch.setenv("MCP_ALLOW_INSECURE", "")
+        assert _is_insecure_allowed() is False
+
+    def test_truthy_1(self, monkeypatch):
+        monkeypatch.setenv("MCP_ALLOW_INSECURE", "1")
+        assert _is_insecure_allowed() is True
+
+    def test_truthy_true(self, monkeypatch):
+        monkeypatch.setenv("MCP_ALLOW_INSECURE", "true")
+        assert _is_insecure_allowed() is True
+
+    def test_truthy_yes(self, monkeypatch):
+        monkeypatch.setenv("MCP_ALLOW_INSECURE", "yes")
+        assert _is_insecure_allowed() is True
+
+    def test_truthy_case_insensitive(self, monkeypatch):
+        monkeypatch.setenv("MCP_ALLOW_INSECURE", "TRUE")
+        assert _is_insecure_allowed() is True
+
+    def test_falsy_value(self, monkeypatch):
+        monkeypatch.setenv("MCP_ALLOW_INSECURE", "0")
+        assert _is_insecure_allowed() is False
+
+
 class TestLoadServerConfigs:
     def test_no_env_returns_empty(self, monkeypatch):
         monkeypatch.delenv("MCP_UPSTREAM_URL", raising=False)
         assert _load_server_configs() == []
 
     def test_with_env_returns_config(self, monkeypatch):
-        monkeypatch.setenv("MCP_UPSTREAM_URL", "http://upstream:9090")
+        monkeypatch.setenv("MCP_UPSTREAM_URL", "https://upstream:9090")
         configs = _load_server_configs()
         assert len(configs) == 1
         assert configs[0].name == "default"
+        assert configs[0].url == "https://upstream:9090"
+
+    def test_http_url_rejected_without_allow_insecure(self, monkeypatch):
+        monkeypatch.setenv("MCP_UPSTREAM_URL", "http://upstream:9090")
+        monkeypatch.delenv("MCP_ALLOW_INSECURE", raising=False)
+        with pytest.raises(ValueError, match="must use https://"):
+            _load_server_configs()
+
+    def test_http_url_allowed_with_allow_insecure(self, monkeypatch):
+        monkeypatch.setenv("MCP_UPSTREAM_URL", "http://upstream:9090")
+        monkeypatch.setenv("MCP_ALLOW_INSECURE", "1")
+        configs = _load_server_configs()
+        assert len(configs) == 1
         assert configs[0].url == "http://upstream:9090"
 
 
 class TestLoadPolicyAndConfigs:
     def test_no_policy_file_falls_back_to_legacy(self, monkeypatch):
         monkeypatch.delenv("MCP_POLICY_FILE", raising=False)
-        monkeypatch.setenv("MCP_UPSTREAM_URL", "http://upstream:9090")
+        monkeypatch.setenv("MCP_UPSTREAM_URL", "https://upstream:9090")
         configs, identity, policy_config = _load_policy_and_configs()
         assert len(configs) == 1
         assert configs[0].name == "default"
@@ -53,7 +97,7 @@ class TestLoadPolicyAndConfigs:
             "version": 1,
             "default": "deny",
             "servers": [
-                {"name": "api", "transport": "http", "url": "http://localhost:9000"},
+                {"name": "api", "transport": "http", "url": "https://localhost:9000"},
             ],
             "policies": [],
         }
@@ -158,7 +202,7 @@ class TestRun:
             "version": 1,
             "default": "deny",
             "servers": [
-                {"name": "api", "transport": "http", "url": "http://localhost:9000"},
+                {"name": "api", "transport": "http", "url": "https://localhost:9000"},
             ],
             "policies": [],
         }

@@ -30,6 +30,11 @@ from mcp_zero.transport.config import ServerConfig, TransportType
 logger = logging.getLogger(__name__)
 
 
+def _is_insecure_allowed() -> bool:
+    """Return True when ``MCP_ALLOW_INSECURE`` env var is truthy."""
+    return os.environ.get("MCP_ALLOW_INSECURE", "").strip().lower() in ("1", "true", "yes")
+
+
 def _load_server_configs() -> list[ServerConfig]:
     """Load upstream server configs from ``MCP_UPSTREAM_URL`` env var.
 
@@ -43,6 +48,7 @@ def _load_server_configs() -> list[ServerConfig]:
             name="default",
             transport=TransportType.HTTP,
             url=url,
+            allow_insecure=_is_insecure_allowed(),
         )
     ]
 
@@ -106,7 +112,9 @@ def _build_pipeline(
             )
             return None
 
-        identity_config = IdentityConfig(issuer=issuer, audience=audience)
+        identity_config = IdentityConfig(
+            issuer=issuer, audience=audience, allow_insecure=_is_insecure_allowed()
+        )
 
     jwks_client = JWKSClient(identity_config)
     validator = JWTValidator(identity_config, jwks_client)
@@ -178,6 +186,7 @@ def _build_obo_provider(configs: list[ServerConfig]) -> AuthProvider | None:
         token_endpoint=token_endpoint,
         client_id=client_id,
         client_secret=client_secret,
+        allow_insecure=_is_insecure_allowed(),
     )
     obo_client = OBOClient(obo_config)
     provider = OBOAuthProvider(obo_client, server_settings)
@@ -192,6 +201,9 @@ def _build_obo_provider(configs: list[ServerConfig]) -> AuthProvider | None:
 def run() -> None:
     """Start the MCP gateway."""
     configure_json_logging(level=os.environ.get("LOG_LEVEL", "INFO").upper())
+
+    if _is_insecure_allowed():
+        logger.warning("MCP_ALLOW_INSECURE is set — HTTPS enforcement disabled (dev only)")
 
     configs, identity_config, policy_config = _load_policy_and_configs()
 

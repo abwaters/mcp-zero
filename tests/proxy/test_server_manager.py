@@ -13,8 +13,14 @@ from mcp_zero.transport.config import ServerConfig, TransportType
 
 def make_configs():
     return [
-        ServerConfig(name="weather", transport=TransportType.HTTP, url="http://weather:8080"),
-        ServerConfig(name="db", transport=TransportType.HTTP, url="http://db:8080"),
+        ServerConfig(
+            name="weather", transport=TransportType.HTTP, url="http://weather:8080",
+            allow_insecure=True,
+        ),
+        ServerConfig(
+            name="db", transport=TransportType.HTTP, url="http://db:8080",
+            allow_insecure=True,
+        ),
     ]
 
 

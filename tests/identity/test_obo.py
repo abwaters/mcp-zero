@@ -63,6 +63,23 @@ class TestOBOConfig:
         with pytest.raises(ValueError, match="client_secret"):
             OBOConfig(token_endpoint="https://x", client_id="x", client_secret="")
 
+    def test_http_endpoint_rejected(self):
+        with pytest.raises(ValueError, match="must use https://"):
+            OBOConfig(
+                token_endpoint="http://okta.example.com/oauth2/token",
+                client_id="x",
+                client_secret="y",
+            )
+
+    def test_http_endpoint_allowed_with_allow_insecure(self):
+        cfg = OBOConfig(
+            token_endpoint="http://okta.example.com/oauth2/token",
+            client_id="x",
+            client_secret="y",
+            allow_insecure=True,
+        )
+        assert cfg.token_endpoint == "http://okta.example.com/oauth2/token"
+
 
 class TestExchangedToken:
     def test_not_expired(self):
