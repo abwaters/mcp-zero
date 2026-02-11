@@ -99,18 +99,23 @@ class TestExchangedToken:
 
 class TestExchangeCacheKey:
     def test_from_params_sorts_scopes(self):
-        key = ExchangeCacheKey.from_params("jti-1", "api://server", ["write", "read"])
+        key = ExchangeCacheKey.from_params("user-1", "api://server", ["write", "read"])
         assert key.scopes == ("read", "write")
 
     def test_equality(self):
-        a = ExchangeCacheKey.from_params("jti-1", "api://server", ["read"])
-        b = ExchangeCacheKey.from_params("jti-1", "api://server", ["read"])
+        a = ExchangeCacheKey.from_params("user-1", "api://server", ["read"])
+        b = ExchangeCacheKey.from_params("user-1", "api://server", ["read"])
         assert a == b
 
     def test_hashable(self):
-        key = ExchangeCacheKey.from_params("jti-1", "api://server", ["read"])
+        key = ExchangeCacheKey.from_params("user-1", "api://server", ["read"])
         d = {key: "value"}
         assert d[key] == "value"
+
+    def test_different_subjects_differ(self):
+        a = ExchangeCacheKey.from_params("user-1", "api://server", ["read"])
+        b = ExchangeCacheKey.from_params("user-2", "api://server", ["read"])
+        assert a != b
 
 
 class TestOBOClient:
@@ -129,7 +134,7 @@ class TestOBOClient:
 
             result = await client.exchange_token(
                 subject_token="token-A",
-                subject_jti="jti-123",
+                subject_id="user-1",
                 target_audience="api://mcp-server",
                 scopes=["read"],
             )
@@ -156,9 +161,9 @@ class TestOBOClient:
             MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
 
             # First call — hits the endpoint
-            await client.exchange_token("token-A", "jti-1", "api://server")
+            await client.exchange_token("token-A", "user-1", "api://server")
             # Second call — should use cache
-            result = await client.exchange_token("token-A", "jti-1", "api://server")
+            result = await client.exchange_token("token-A", "user-1", "api://server")
 
         assert result == "exchanged-token"
         assert mock_http.post.call_count == 1
@@ -169,7 +174,7 @@ class TestOBOClient:
         client = OBOClient(config)
 
         # Pre-populate cache with an expired token
-        key = ExchangeCacheKey.from_params("jti-1", "api://server", [])
+        key = ExchangeCacheKey.from_params("user-1", "api://server", [])
         client._cache[key] = ExchangedToken(
             access_token="old-token",
             token_type="Bearer",
@@ -186,7 +191,7 @@ class TestOBOClient:
             MockClient.return_value.__aenter__ = AsyncMock(return_value=mock_http)
             MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
 
-            result = await client.exchange_token("token-A", "jti-1", "api://server")
+            result = await client.exchange_token("token-A", "user-1", "api://server")
 
         assert result == "new-token"
 
@@ -209,9 +214,9 @@ class TestOBOClient:
             MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
 
             results = await asyncio.gather(
-                client.exchange_token("token-A", "jti-1", "api://server"),
-                client.exchange_token("token-A", "jti-1", "api://server"),
-                client.exchange_token("token-A", "jti-1", "api://server"),
+                client.exchange_token("token-A", "user-1", "api://server"),
+                client.exchange_token("token-A", "user-1", "api://server"),
+                client.exchange_token("token-A", "user-1", "api://server"),
             )
 
         assert all(r == "exchanged-token" for r in results)
@@ -233,7 +238,7 @@ class TestOBOClient:
             MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
 
             with pytest.raises(TokenExchangeError, match="HTTP 400"):
-                await client.exchange_token("token-A", "jti-1", "api://server")
+                await client.exchange_token("token-A", "user-1", "api://server")
 
     @pytest.mark.asyncio
     async def test_http_401_raises(self):
@@ -251,7 +256,7 @@ class TestOBOClient:
             MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
 
             with pytest.raises(TokenExchangeError, match="HTTP 401"):
-                await client.exchange_token("token-A", "jti-1", "api://server")
+                await client.exchange_token("token-A", "user-1", "api://server")
 
     @pytest.mark.asyncio
     async def test_http_500_raises(self):
@@ -269,7 +274,7 @@ class TestOBOClient:
             MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
 
             with pytest.raises(TokenExchangeError, match="HTTP 500"):
-                await client.exchange_token("token-A", "jti-1", "api://server")
+                await client.exchange_token("token-A", "user-1", "api://server")
 
     @pytest.mark.asyncio
     async def test_missing_access_token_raises(self):
@@ -287,7 +292,7 @@ class TestOBOClient:
             MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
 
             with pytest.raises(TokenExchangeError, match="missing 'access_token'"):
-                await client.exchange_token("token-A", "jti-1", "api://server")
+                await client.exchange_token("token-A", "user-1", "api://server")
 
     @pytest.mark.asyncio
     async def test_network_error_raises(self):
@@ -301,7 +306,7 @@ class TestOBOClient:
             MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
 
             with pytest.raises(TokenExchangeError, match="request failed"):
-                await client.exchange_token("token-A", "jti-1", "api://server")
+                await client.exchange_token("token-A", "user-1", "api://server")
 
     @pytest.mark.asyncio
     async def test_scopes_included_in_post(self):
@@ -317,7 +322,7 @@ class TestOBOClient:
             MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
 
             await client.exchange_token(
-                "token-A", "jti-1", "api://server", scopes=["read", "write"]
+                "token-A", "user-1", "api://server", scopes=["read", "write"]
             )
 
         call_data = mock_http.post.call_args[1]["data"]
@@ -336,7 +341,7 @@ class TestOBOClient:
             MockClient.return_value.__aenter__ = AsyncMock(return_value=mock_http)
             MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
 
-            await client.exchange_token("token-A", "jti-1", "api://server")
+            await client.exchange_token("token-A", "user-1", "api://server")
 
         call_data = mock_http.post.call_args[1]["data"]
         assert "scope" not in call_data
