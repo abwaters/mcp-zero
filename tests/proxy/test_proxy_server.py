@@ -99,6 +99,104 @@ class TestProxyServerListTools:
         assert len(tools) == 1
         assert tools[0].name == "db__query"
 
+    @pytest.mark.asyncio
+    async def test_timeout_skips_slow_server(self):
+        configs = [
+            ServerConfig(
+                name="fast",
+                transport=TransportType.HTTP,
+                url="http://fast:8080",
+                timeout_seconds=0.05,
+                allow_insecure=True,
+            ),
+            ServerConfig(
+                name="slow",
+                transport=TransportType.HTTP,
+                url="http://slow:8080",
+                timeout_seconds=0.05,
+                allow_insecure=True,
+            ),
+        ]
+        mgr = ServerManager(configs)
+
+        mock_fast = AsyncMock()
+        mock_fast.list_tools = AsyncMock(
+            return_value=ListToolsResult(tools=[make_tool("ping")])
+        )
+        mock_slow = AsyncMock()
+
+        async def slow_list_tools():
+            await asyncio.sleep(10)
+            return ListToolsResult(tools=[make_tool("nope")])
+
+        mock_slow.list_tools = AsyncMock(side_effect=slow_list_tools)
+
+        sessions = {"fast": mock_fast, "slow": mock_slow}
+
+        async def fake_get_session(name, ctx=None, **kwargs):
+            return sessions[name]
+
+        mgr.get_session = AsyncMock(side_effect=fake_get_session)
+
+        proxy = ProxyServer(mgr)
+        tools = await proxy._list_tools()
+
+        assert len(tools) == 1
+        assert tools[0].name == "fast__ping"
+
+    @pytest.mark.asyncio
+    async def test_queries_servers_concurrently(self):
+        """Verify servers are queried in parallel, not sequentially."""
+        configs = [
+            ServerConfig(
+                name="a",
+                transport=TransportType.HTTP,
+                url="http://a:8080",
+                timeout_seconds=5.0,
+                allow_insecure=True,
+            ),
+            ServerConfig(
+                name="b",
+                transport=TransportType.HTTP,
+                url="http://b:8080",
+                timeout_seconds=5.0,
+                allow_insecure=True,
+            ),
+        ]
+        mgr = ServerManager(configs)
+
+        async def delayed_list_a():
+            await asyncio.sleep(0.1)
+            return ListToolsResult(tools=[make_tool("tool_a")])
+
+        async def delayed_list_b():
+            await asyncio.sleep(0.1)
+            return ListToolsResult(tools=[make_tool("tool_b")])
+
+        mock_a = AsyncMock()
+        mock_a.list_tools = delayed_list_a
+        mock_b = AsyncMock()
+        mock_b.list_tools = delayed_list_b
+
+        sessions = {"a": mock_a, "b": mock_b}
+
+        async def fake_get_session(name, ctx=None, **kwargs):
+            return sessions[name]
+
+        mgr.get_session = AsyncMock(side_effect=fake_get_session)
+
+        proxy = ProxyServer(mgr)
+
+        import time
+
+        start = time.monotonic()
+        tools = await proxy._list_tools()
+        elapsed = time.monotonic() - start
+
+        assert len(tools) == 2
+        # If sequential, would take ~0.2s; parallel should be ~0.1s
+        assert elapsed < 0.18, f"Took {elapsed:.3f}s — servers queried sequentially?"
+
 
 class TestProxyServerCallTool:
     @pytest.mark.asyncio

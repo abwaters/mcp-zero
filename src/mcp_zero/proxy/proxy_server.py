@@ -60,14 +60,35 @@ class ProxyServer:
 
     async def _list_tools(self) -> list[types.Tool]:
         """Query all upstream servers and aggregate their tools with namespace prefixes."""
-        all_tools: list[types.Tool] = []
-        for server_name in self._server_manager.server_names:
+
+        async def _fetch_tools(server_name: str) -> list[types.Tool]:
+            config = self._server_manager.get_config(server_name)
             try:
                 session = await self._server_manager.get_session(server_name)
-                result = await session.list_tools()
-                all_tools.extend(namespace_tools(server_name, result.tools))
+                result = await asyncio.wait_for(
+                    session.list_tools(),
+                    timeout=config.timeout_seconds,
+                )
+                tools = namespace_tools(server_name, result.tools)
+                logger.debug("Listed %d tools from '%s'", len(tools), server_name)
+                return tools
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Timed out listing tools from '%s' after %.1fs",
+                    server_name,
+                    config.timeout_seconds,
+                )
+                return []
             except Exception:
                 logger.warning("Failed to list tools from '%s'", server_name, exc_info=True)
+                return []
+
+        results = await asyncio.gather(
+            *(_fetch_tools(name) for name in self._server_manager.server_names)
+        )
+        all_tools: list[types.Tool] = []
+        for tools in results:
+            all_tools.extend(tools)
         return all_tools
 
     async def _call_tool(
