@@ -1,0 +1,26 @@
+# Policy: filesystem
+# MCP "server-filesystem" via stdio — exposes .data/ directory.
+# Usage: scripts\run-policy.bat filesystem
+
+version: 1
+default: allow
+
+servers:
+  - name: filesystem
+    transport: stdio
+    command: npx
+    args:
+      - "-y"
+      - "@modelcontextprotocol/server-filesystem"
+      - ".data"
+
+policies:
+  - id: allow-all
+    description: Allow all tools on the filesystem server
+    effect: allow
+    mcp_servers:
+      - name: filesystem
+        tools: ["*"]
+
+logging:
+  level: DEBUG
