@@ -120,9 +120,7 @@ class TestProxyServerListTools:
         mgr = ServerManager(configs)
 
         mock_fast = AsyncMock()
-        mock_fast.list_tools = AsyncMock(
-            return_value=ListToolsResult(tools=[make_tool("ping")])
-        )
+        mock_fast.list_tools = AsyncMock(return_value=ListToolsResult(tools=[make_tool("ping")]))
         mock_slow = AsyncMock()
 
         async def slow_list_tools():
