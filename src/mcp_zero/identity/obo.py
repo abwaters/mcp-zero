@@ -57,18 +57,23 @@ class ExchangedToken:
 
 @dataclass(frozen=True)
 class ExchangeCacheKey:
-    """Cache key for token exchange results."""
+    """Cache key for token exchange results.
 
-    subject_jti: str
+    Keyed by validated ``subject_id`` (the ``sub`` claim from the identity
+    token) rather than ``jti`` to avoid cache-key collisions when tokens
+    lack a ``jti`` claim.  See GitHub issue #51.
+    """
+
+    subject_id: str
     target_audience: str
     scopes: tuple[str, ...]
 
     @classmethod
     def from_params(
-        cls, subject_jti: str, target_audience: str, scopes: list[str]
+        cls, subject_id: str, target_audience: str, scopes: list[str]
     ) -> ExchangeCacheKey:
         return cls(
-            subject_jti=subject_jti,
+            subject_id=subject_id,
             target_audience=target_audience,
             scopes=tuple(sorted(scopes)),
         )
@@ -86,17 +91,17 @@ class OBOClient:
     async def exchange_token(
         self,
         subject_token: str,
-        subject_jti: str,
+        subject_id: str,
         target_audience: str,
         scopes: list[str] | None = None,
     ) -> str:
         """Exchange a subject token for a server-scoped access token.
 
         Returns the ``access_token`` string.  Results are cached per
-        (jti, audience, scopes) until they expire.
+        (subject_id, audience, scopes) until they expire.
         """
         scopes = scopes or []
-        key = ExchangeCacheKey.from_params(subject_jti, target_audience, scopes)
+        key = ExchangeCacheKey.from_params(subject_id, target_audience, scopes)
 
         # Fast path: cache hit
         cached = self._cache.get(key)

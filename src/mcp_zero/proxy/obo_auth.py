@@ -5,8 +5,6 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-import jwt as pyjwt
-
 from mcp_zero.context import RequestContext
 from mcp_zero.identity.obo import OBOClient
 from mcp_zero.proxy.auth import AuthProvider
@@ -44,21 +42,13 @@ class OBOAuthProvider(AuthProvider):
             logger.debug("No raw_token on context for server '%s', skipping OBO", server_name)
             return None
 
-        # Extract jti from the raw token (already validated by IdentityHook)
-        jti = self._extract_jti(context.raw_token)
+        if not context.identity:
+            logger.debug("No identity on context for server '%s', skipping OBO", server_name)
+            return None
 
         return await self._obo_client.exchange_token(
             subject_token=context.raw_token,
-            subject_jti=jti,
+            subject_id=context.identity.user_id,
             target_audience=settings.target_audience,
             scopes=settings.scopes,
         )
-
-    @staticmethod
-    def _extract_jti(token: str) -> str:
-        """Extract jti from the raw JWT without verification (already validated)."""
-        try:
-            claims = pyjwt.decode(token, options={"verify_signature": False})
-            return claims.get("jti", "")
-        except pyjwt.PyJWTError:
-            return ""
