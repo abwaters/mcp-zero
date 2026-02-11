@@ -517,7 +517,7 @@ class TestProxyServerWithAuth:
         mock_auth = AsyncMock(spec=AuthProvider)
         mock_auth.get_token = AsyncMock(
             side_effect=TokenExchangeError(
-                "Token exchange returned HTTP 401: {\"error\":\"invalid_grant\"}",
+                'Token exchange returned HTTP 401: {"error":"invalid_grant"}',
                 audience="api://weather",
             )
         )
