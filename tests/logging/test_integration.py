@@ -1,4 +1,4 @@
-"""Integration tests for configure_json_logging."""
+"""Integration tests for configure_json_logging and configure_logging."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import io
 import json
 import logging
 
-from mcp_zero.logging import SERVICE_NAME, configure_json_logging
+from mcp_zero.logging import SERVICE_NAME, configure_json_logging, configure_logging
 
 
 class TestConfigureJsonLogging:
@@ -124,3 +124,105 @@ class TestConfigureJsonLogging:
         assert len(lines) == 2
         assert json.loads(lines[0])["message"] == "should appear before override"
         assert json.loads(lines[1])["message"] == "should appear after override"
+
+
+class TestConfigureLogging:
+    """Verify configure_logging with fmt='text'."""
+
+    def test_text_format_writes_readable_output(self):
+        stream = io.StringIO()
+        configure_logging(level="INFO", fmt="text", stream=stream)
+
+        logger = logging.getLogger("test.integration.text")
+        logger.info("hello from text mode")
+
+        output = stream.getvalue()
+        assert "hello from text mode" in output
+        assert "INFO" in output
+        # Should NOT be JSON
+        assert not output.strip().startswith("{")
+
+    def test_text_format_level_filtering(self):
+        stream = io.StringIO()
+        configure_logging(level="WARNING", fmt="text", stream=stream)
+
+        logger = logging.getLogger("test.integration.text.level")
+        logger.info("should be filtered")
+        logger.warning("should appear")
+
+        output = stream.getvalue()
+        assert "should be filtered" not in output
+        assert "should appear" in output
+
+    def test_text_format_audit_event_readable(self):
+        stream = io.StringIO()
+        configure_logging(level="INFO", fmt="text", stream=stream)
+
+        audit_logger = logging.getLogger("mcp_zero.audit.hook")
+        audit_event = json.dumps(
+            {
+                "event_type": "mcp_tool_invocation",
+                "server_name": "api",
+                "tool_name": "search",
+                "user": {"user_id": "alice"},
+                "policy_decision": "allow",
+                "correlation_id": "test-cid-123",
+                "masking_events": [],
+            }
+        )
+        audit_logger.info(audit_event)
+
+        output = stream.getvalue()
+        assert "TOOL_CALL" in output
+        assert "server=api" in output
+        assert "tool=search" in output
+        assert "user=alice" in output
+        # Raw JSON should NOT appear
+        assert '"event_type"' not in output
+
+    def test_text_format_mixed_logs(self):
+        stream = io.StringIO()
+        configure_logging(level="INFO", fmt="text", stream=stream)
+
+        ops_logger = logging.getLogger("test.integration.text.mixed")
+        audit_logger = logging.getLogger("mcp_zero.audit.hook")
+
+        ops_logger.info("operational message")
+        audit_logger.info(
+            json.dumps(
+                {
+                    "event_type": "mcp_tool_invocation",
+                    "masking_events": [],
+                }
+            )
+        )
+        ops_logger.warning("a warning")
+
+        lines = [line for line in stream.getvalue().strip().split("\n") if line]
+        assert len(lines) == 3
+        assert "operational message" in lines[0]
+        assert "TOOL_CALL" in lines[1]
+        assert "WARN" in lines[2]
+
+    def test_json_format_unchanged(self):
+        """Ensure fmt='json' produces the same JSONL output as before."""
+        stream = io.StringIO()
+        configure_logging(level="INFO", fmt="json", stream=stream)
+
+        logger = logging.getLogger("test.integration.text.json")
+        logger.info("json mode")
+
+        result = json.loads(stream.getvalue().strip())
+        assert result["message"] == "json mode"
+        assert result["service"] == SERVICE_NAME
+
+    def test_configure_json_logging_still_works(self):
+        """Legacy function still works."""
+        stream = io.StringIO()
+        configure_json_logging(level="INFO", stream=stream)
+
+        logger = logging.getLogger("test.integration.text.legacy")
+        logger.info("legacy call")
+
+        result = json.loads(stream.getvalue().strip())
+        assert result["message"] == "legacy call"

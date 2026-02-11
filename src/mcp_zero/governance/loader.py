@@ -359,6 +359,7 @@ def _build_logging(data: dict) -> LoggingConfig:
     try:
         return LoggingConfig(
             level=data.get("level", "INFO"),
+            format=data.get("format", "json"),
             include=data.get("include", []),
         )
     except ValueError as exc:

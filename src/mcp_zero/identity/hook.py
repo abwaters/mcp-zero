@@ -28,20 +28,38 @@ class IdentityHook(LifecycleHook):
 
     async def on_pre_validation(self, ctx: HookContext) -> HookContext:
         auth_header = ctx.extras.get("authorization", "")
+        correlation_id = ctx.request.correlation_id
 
         if not auth_header:
-            logger.warning("Missing Authorization header")
+            logger.warning(
+                "Missing Authorization header (server=%s, tool=%s, correlation_id=%s)",
+                ctx.server_name,
+                ctx.tool_name,
+                correlation_id,
+            )
             raise ShortCircuitError("Missing Authorization header", deny=True)
 
         token = self._parse_bearer(auth_header)
         if token is None:
-            logger.warning("Malformed Authorization header")
+            logger.warning(
+                "Malformed Authorization header — expected 'Bearer <token>' "
+                "(server=%s, tool=%s, correlation_id=%s)",
+                ctx.server_name,
+                ctx.tool_name,
+                correlation_id,
+            )
             raise ShortCircuitError("Malformed Authorization header", deny=True)
 
         try:
             claims = await self._validator.validate_token(token)
         except IdentityError as exc:
-            logger.warning("Token validation failed: %s", exc)
+            logger.warning(
+                "Token validation failed: %s (server=%s, tool=%s, correlation_id=%s)",
+                exc,
+                ctx.server_name,
+                ctx.tool_name,
+                correlation_id,
+            )
             raise ShortCircuitError(f"Authentication failed: {exc}", deny=True) from exc
 
         # Enrich the request context with validated identity

@@ -65,9 +65,13 @@ class MaskingHook(LifecycleHook):
             )
         except MaskingEngineError as exc:
             logger.error(
-                "Masking engine failure — denying request (correlation_id=%s): %s",
+                "Masking engine failure — denying request "
+                "(server=%s, tool=%s, correlation_id=%s): %s",
+                ctx.server_name,
+                ctx.tool_name,
                 correlation_id,
                 exc,
+                exc_info=True,
             )
             raise ShortCircuitError(
                 f"Masking failure: {exc}",
@@ -116,7 +120,10 @@ class MaskingHook(LifecycleHook):
             )
         except MaskingEngineError as exc:
             logger.error(
-                "Output masking engine failure — blocking response (correlation_id=%s): %s",
+                "Output masking engine failure — blocking response "
+                "(server=%s, tool=%s, correlation_id=%s): %s",
+                ctx.server_name,
+                ctx.tool_name,
                 correlation_id,
                 exc,
                 exc_info=True,

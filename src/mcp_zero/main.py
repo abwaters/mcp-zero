@@ -17,7 +17,7 @@ from mcp_zero.governance.loader import (
 )
 from mcp_zero.identity import IdentityConfig, IdentityHook, JWKSClient, JWTValidator
 from mcp_zero.identity.obo import OBOClient, OBOConfig
-from mcp_zero.logging import configure_json_logging
+from mcp_zero.logging import configure_logging
 from mcp_zero.masking import MaskingHook, PresidioMaskingEngine
 from mcp_zero.pipeline import HookRegistry, Pipeline
 from mcp_zero.proxy.app import create_app
@@ -200,16 +200,24 @@ def _build_obo_provider(configs: list[ServerConfig]) -> AuthProvider | None:
 
 def run() -> None:
     """Start the MCP gateway."""
-    configure_json_logging(level=os.environ.get("LOG_LEVEL", "INFO").upper())
+    configure_logging(
+        level=os.environ.get("LOG_LEVEL", "INFO").upper(),
+        fmt=os.environ.get("LOG_FORMAT", "json").strip().lower(),
+    )
 
     if _is_insecure_allowed():
         logger.warning("MCP_ALLOW_INSECURE is set — HTTPS enforcement disabled (dev only)")
 
     configs, identity_config, policy_config = _load_policy_and_configs()
 
-    # If policy specifies a logging level, apply it
+    # If policy specifies logging overrides, apply them
     if policy_config and policy_config.logging:
         logging.getLogger().setLevel(policy_config.logging.level.upper())
+        if policy_config.logging.format != "json":
+            configure_logging(
+                level=policy_config.logging.level.upper(),
+                fmt=policy_config.logging.format,
+            )
     if not configs:
         logger.info("No upstream servers configured — starting in pass-through mode")
 
@@ -225,6 +233,22 @@ def run() -> None:
 
     host = os.environ.get("MCP_HOST", "0.0.0.0")
     port = int(os.environ.get("MCP_PORT", "8080"))
+
+    # Startup summary — shows what's active at a glance for debugging
+    fmt = os.environ.get("LOG_FORMAT", "json").strip().lower()
+    if policy_config and policy_config.logging:
+        fmt = policy_config.logging.format
+    masking_active = policy_config is not None and policy_config.masking.presidio.enabled
+    logger.info(
+        "Gateway ready: servers=%d, identity=%s, governance=%s, masking=%s, "
+        "log_format=%s, log_level=%s",
+        len(configs),
+        "enabled" if pipeline else "disabled",
+        "enabled (%d rules)" % len(policy_config.policies) if policy_config else "disabled",
+        "enabled" if masking_active else "disabled",
+        fmt,
+        logging.getLogger().level,
+    )
 
     logger.info("Starting mcp-zero gateway on %s:%d", host, port)
     uvicorn.run(app, host=host, port=port)
