@@ -203,9 +203,7 @@ class TextFormatter(logging.Formatter):
         # Masking summary
         masking_events = obj.get("masking_events", [])
         if masking_events:
-            masked_str = ", ".join(
-                f"{e['count']}x {e['entity_type']}" for e in masking_events
-            )
+            masked_str = ", ".join(f"{e['count']}x {e['entity_type']}" for e in masking_events)
             parts.append(f"masked=[{masked_str}]")
 
         error_type = obj.get("error_type", "")
@@ -325,7 +323,7 @@ def _try_parse_json(msg: str) -> dict | None:
 def _short_logger(name: str) -> str:
     """Abbreviate ``mcp_zero.governance.hook`` → ``governance.hook``."""
     if name.startswith("mcp_zero."):
-        return name[len("mcp_zero."):]
+        return name[len("mcp_zero.") :]
     return name
 
 

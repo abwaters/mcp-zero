@@ -32,8 +32,7 @@ class IdentityHook(LifecycleHook):
 
         if not auth_header:
             logger.warning(
-                "Missing Authorization header "
-                "(server=%s, tool=%s, correlation_id=%s)",
+                "Missing Authorization header (server=%s, tool=%s, correlation_id=%s)",
                 ctx.server_name,
                 ctx.tool_name,
                 correlation_id,
@@ -55,8 +54,7 @@ class IdentityHook(LifecycleHook):
             claims = await self._validator.validate_token(token)
         except IdentityError as exc:
             logger.warning(
-                "Token validation failed: %s "
-                "(server=%s, tool=%s, correlation_id=%s)",
+                "Token validation failed: %s (server=%s, tool=%s, correlation_id=%s)",
                 exc,
                 ctx.server_name,
                 ctx.tool_name,

@@ -159,8 +159,7 @@ class LoggingConfig:
             )
         if self.format.lower() not in self._VALID_FORMATS:
             raise ValueError(
-                f"logging.format must be one of {sorted(self._VALID_FORMATS)}, "
-                f"got '{self.format}'"
+                f"logging.format must be one of {sorted(self._VALID_FORMATS)}, got '{self.format}'"
             )
 
 

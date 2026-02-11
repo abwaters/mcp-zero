@@ -159,15 +159,17 @@ class TestConfigureLogging:
         configure_logging(level="INFO", fmt="text", stream=stream)
 
         audit_logger = logging.getLogger("mcp_zero.audit.hook")
-        audit_event = json.dumps({
-            "event_type": "mcp_tool_invocation",
-            "server_name": "api",
-            "tool_name": "search",
-            "user": {"user_id": "alice"},
-            "policy_decision": "allow",
-            "correlation_id": "test-cid-123",
-            "masking_events": [],
-        })
+        audit_event = json.dumps(
+            {
+                "event_type": "mcp_tool_invocation",
+                "server_name": "api",
+                "tool_name": "search",
+                "user": {"user_id": "alice"},
+                "policy_decision": "allow",
+                "correlation_id": "test-cid-123",
+                "masking_events": [],
+            }
+        )
         audit_logger.info(audit_event)
 
         output = stream.getvalue()
@@ -186,10 +188,14 @@ class TestConfigureLogging:
         audit_logger = logging.getLogger("mcp_zero.audit.hook")
 
         ops_logger.info("operational message")
-        audit_logger.info(json.dumps({
-            "event_type": "mcp_tool_invocation",
-            "masking_events": [],
-        }))
+        audit_logger.info(
+            json.dumps(
+                {
+                    "event_type": "mcp_tool_invocation",
+                    "masking_events": [],
+                }
+            )
+        )
         ops_logger.warning("a warning")
 
         lines = [line for line in stream.getvalue().strip().split("\n") if line]

@@ -238,10 +238,7 @@ def run() -> None:
     fmt = os.environ.get("LOG_FORMAT", "json").strip().lower()
     if policy_config and policy_config.logging:
         fmt = policy_config.logging.format
-    masking_active = (
-        policy_config is not None
-        and policy_config.masking.presidio.enabled
-    )
+    masking_active = policy_config is not None and policy_config.masking.presidio.enabled
     logger.info(
         "Gateway ready: servers=%d, identity=%s, governance=%s, masking=%s, "
         "log_format=%s, log_level=%s",
