@@ -22,6 +22,8 @@ class EventType:
     TOOL_CALL = "tool_call"
     DENIAL = "denial"
     REDACTION = "redaction"
+    OUTPUT_REDACTION = "output_redaction"
+    MASKING_FAILURE = "masking_failure"
     ERROR = "error"
 
 
@@ -39,6 +41,9 @@ class AnalyticsEvent:
     duration_ms: float = 0.0
     request_bytes: int = 0
     response_bytes: int = 0
+    transport: str = ""
+    reason: str = ""
+    direction: str = ""  # "input" | "output" for masking failures
     timestamp: float = field(default_factory=time.time)
 
 
@@ -50,7 +55,7 @@ class AnalyticsCollector:
     1. **Flush task** — drains the event queue every ``flush_interval`` seconds
        and writes aggregated counters to Redis via pipeline.
     2. **Heartbeat task** — writes gateway presence to the registry sorted set
-       every ``heartbeat_seconds`` seconds.
+       every ``heartbeat_seconds`` seconds, and maintains navigation index sets.
 
     If Redis is unavailable, events are silently dropped.  The queue is bounded
     to prevent memory growth.
@@ -60,7 +65,9 @@ class AnalyticsCollector:
         self._config = config
         self._client = client
         self._keys = KeyBuilder(config.key_prefix, config.environment, config.gateway_id)
-        self._queue: asyncio.Queue[AnalyticsEvent] = asyncio.Queue(maxsize=config.queue_size)
+        self._queue: asyncio.Queue[AnalyticsEvent] = asyncio.Queue(
+            maxsize=config.queue_size
+        )
         self._flush_task: asyncio.Task[None] | None = None
         self._heartbeat_task: asyncio.Task[None] | None = None
         self._started_at = time.time()
@@ -74,7 +81,9 @@ class AnalyticsCollector:
         self._running = True
         self._started_at = time.time()
         await self._client.connect()
-        self._flush_task = asyncio.create_task(self._flush_loop(), name="analytics-flush")
+        self._flush_task = asyncio.create_task(
+            self._flush_loop(), name="analytics-flush"
+        )
         self._heartbeat_task = asyncio.create_task(
             self._heartbeat_loop(), name="analytics-heartbeat"
         )
@@ -105,6 +114,8 @@ class AnalyticsCollector:
         await self._client.disconnect()
         logger.info("Analytics collector stopped")
 
+    # -- Public recording methods (non-blocking) --------------------------------
+
     def record_tool_call(
         self,
         *,
@@ -114,8 +125,9 @@ class AnalyticsCollector:
         duration_ms: float = 0.0,
         request_bytes: int = 0,
         response_bytes: int = 0,
+        transport: str = "",
     ) -> None:
-        """Enqueue a successful tool call event (non-blocking)."""
+        """Enqueue a tool call event."""
         self._enqueue(
             AnalyticsEvent(
                 event_type=EventType.TOOL_CALL,
@@ -125,6 +137,7 @@ class AnalyticsCollector:
                 duration_ms=duration_ms,
                 request_bytes=request_bytes,
                 response_bytes=response_bytes,
+                transport=transport,
             )
         )
 
@@ -135,8 +148,9 @@ class AnalyticsCollector:
         tool: str,
         user_id: str = "",
         rule_id: str = "",
+        reason: str = "",
     ) -> None:
-        """Enqueue a policy denial event (non-blocking)."""
+        """Enqueue a policy denial event."""
         self._enqueue(
             AnalyticsEvent(
                 event_type=EventType.DENIAL,
@@ -144,6 +158,7 @@ class AnalyticsCollector:
                 tool=tool,
                 user_id=user_id,
                 rule_id=rule_id,
+                reason=reason,
             )
         )
 
@@ -155,7 +170,7 @@ class AnalyticsCollector:
         entity_type: str,
         count: int = 1,
     ) -> None:
-        """Enqueue a redaction event (non-blocking)."""
+        """Enqueue an input redaction event."""
         self._enqueue(
             AnalyticsEvent(
                 event_type=EventType.REDACTION,
@@ -166,8 +181,44 @@ class AnalyticsCollector:
             )
         )
 
+    def record_output_redaction(
+        self,
+        *,
+        server: str,
+        tool: str,
+        entity_type: str,
+        count: int = 1,
+    ) -> None:
+        """Enqueue an output redaction event."""
+        self._enqueue(
+            AnalyticsEvent(
+                event_type=EventType.OUTPUT_REDACTION,
+                server=server,
+                tool=tool,
+                entity_type=entity_type,
+                count=count,
+            )
+        )
+
+    def record_masking_failure(
+        self, *, server: str, tool: str, direction: str
+    ) -> None:
+        """Enqueue a masking failure event.
+
+        Args:
+            direction: ``"input"`` or ``"output"``.
+        """
+        self._enqueue(
+            AnalyticsEvent(
+                event_type=EventType.MASKING_FAILURE,
+                server=server,
+                tool=tool,
+                direction=direction,
+            )
+        )
+
     def record_error(self, *, server: str, tool: str) -> None:
-        """Enqueue an error event (non-blocking)."""
+        """Enqueue an error event."""
         self._enqueue(
             AnalyticsEvent(
                 event_type=EventType.ERROR,
@@ -175,6 +226,8 @@ class AnalyticsCollector:
                 tool=tool,
             )
         )
+
+    # -- Internal ---------------------------------------------------------------
 
     def _enqueue(self, event: AnalyticsEvent) -> None:
         """Put an event on the queue, dropping if full."""
@@ -221,75 +274,136 @@ class AnalyticsCollector:
         ops: list[tuple[str, list[Any]]] = []
         ttl = self._config.retention_seconds
         keys_seen: set[str] = set()
+        # Track per-bucket max latencies: (bucket_key, field) → max_ms
+        latency_maxes: dict[tuple[str, str], int] = {}
 
         for event in events:
-            bid = self._keys.bucket_id(self._config.bucket_seconds, event.timestamp)
-            tool_key = f"{event.server}::{event.tool}"
+            bid = self._keys.bucket_id(
+                self._config.bucket_seconds, event.timestamp
+            )
+            tool_field = f"{event.server}::{event.tool}"
 
             if event.event_type == EventType.TOOL_CALL:
-                self._add_hincrby(ops, keys_seen, "tool_calls", bid, tool_key, 1, ttl)
-                self._add_hincrby(ops, keys_seen, "server_calls", bid, event.server, 1, ttl)
+                self._hincrby(ops, keys_seen, "calls", "tool", bid, tool_field, 1, ttl)
+                self._hincrby(
+                    ops, keys_seen, "calls", "server", bid, event.server, 1, ttl
+                )
                 if event.user_id:
-                    self._add_hincrby(ops, keys_seen, "user_calls", bid, event.user_id, 1, ttl)
+                    self._hincrby(
+                        ops, keys_seen, "calls", "user", bid, event.user_id, 1, ttl
+                    )
+                if event.transport:
+                    self._hincrby(
+                        ops, keys_seen, "calls", "transport", bid,
+                        event.transport, 1, ttl,
+                    )
                 if event.duration_ms > 0:
-                    self._add_hincrby(
-                        ops, keys_seen, "latency_sum", bid, tool_key,
-                        int(event.duration_ms), ttl,
+                    duration_int = int(event.duration_ms)
+                    self._hincrby(
+                        ops, keys_seen, "latency", "sum", bid,
+                        tool_field, duration_int, ttl,
                     )
-                    self._add_hincrby(
-                        ops, keys_seen, "latency_count", bid, tool_key, 1, ttl,
+                    self._hincrby(
+                        ops, keys_seen, "latency", "count", bid,
+                        tool_field, 1, ttl,
                     )
+                    # Track max for deferred HSET
+                    max_key = self._keys.bucket_key("latency", "max", bid)
+                    existing = latency_maxes.get((max_key, tool_field), 0)
+                    if duration_int > existing:
+                        latency_maxes[(max_key, tool_field)] = duration_int
                 if event.request_bytes > 0:
-                    self._add_hincrby(
-                        ops, keys_seen, "request_bytes", bid, tool_key,
-                        event.request_bytes, ttl,
+                    self._hincrby(
+                        ops, keys_seen, "sizes", "request", bid,
+                        tool_field, event.request_bytes, ttl,
                     )
                 if event.response_bytes > 0:
-                    self._add_hincrby(
-                        ops, keys_seen, "response_bytes", bid, tool_key,
-                        event.response_bytes, ttl,
+                    self._hincrby(
+                        ops, keys_seen, "sizes", "response", bid,
+                        tool_field, event.response_bytes, ttl,
                     )
 
             elif event.event_type == EventType.DENIAL:
-                self._add_hincrby(ops, keys_seen, "denials", bid, tool_key, 1, ttl)
+                self._hincrby(
+                    ops, keys_seen, "denials", "tool", bid, tool_field, 1, ttl
+                )
                 if event.rule_id:
-                    self._add_hincrby(
-                        ops, keys_seen, "denial_rules", bid, event.rule_id, 1, ttl,
+                    self._hincrby(
+                        ops, keys_seen, "denials", "rule", bid,
+                        event.rule_id, 1, ttl,
                     )
                 if event.user_id:
-                    self._add_hincrby(
-                        ops, keys_seen, "denial_users", bid, event.user_id, 1, ttl,
+                    self._hincrby(
+                        ops, keys_seen, "denials", "user", bid,
+                        event.user_id, 1, ttl,
+                    )
+                if event.reason:
+                    self._hincrby(
+                        ops, keys_seen, "denials", "reason", bid,
+                        event.reason, 1, ttl,
                     )
 
             elif event.event_type == EventType.REDACTION:
-                self._add_hincrby(
-                    ops, keys_seen, "redactions", bid, event.entity_type, event.count, ttl,
+                self._hincrby(
+                    ops, keys_seen, "redactions", "input", bid,
+                    event.entity_type, event.count, ttl,
                 )
-                self._add_hincrby(
-                    ops, keys_seen, "redaction_tools", bid, tool_key, event.count, ttl,
+                self._hincrby(
+                    ops, keys_seen, "redactions", "tool", bid,
+                    tool_field, event.count, ttl,
+                )
+
+            elif event.event_type == EventType.OUTPUT_REDACTION:
+                self._hincrby(
+                    ops, keys_seen, "redactions", "output", bid,
+                    event.entity_type, event.count, ttl,
+                )
+                self._hincrby(
+                    ops, keys_seen, "redactions", "tool", bid,
+                    tool_field, event.count, ttl,
+                )
+
+            elif event.event_type == EventType.MASKING_FAILURE:
+                self._hincrby(
+                    ops, keys_seen, "redactions", "fail", bid,
+                    event.direction, 1, ttl,
                 )
 
             elif event.event_type == EventType.ERROR:
-                self._add_hincrby(ops, keys_seen, "errors", bid, tool_key, 1, ttl)
+                self._hincrby(
+                    ops, keys_seen, "errors", "tool", bid, tool_field, 1, ttl
+                )
+
+        # Emit HSET for latency max values (not HINCRBY — we want max, not sum).
+        # This is approximate when multiple flushes compete, but good enough for
+        # a dashboard snapshot.
+        for (max_key, field_name), max_val in latency_maxes.items():
+            ops.append(("HSET", [max_key, field_name, str(max_val)]))
+            if max_key not in keys_seen:
+                keys_seen.add(max_key)
+                ops.append(("EXPIRE", [max_key, ttl]))
 
         return ops
 
-    def _add_hincrby(
+    def _hincrby(
         self,
         ops: list[tuple[str, list[Any]]],
         keys_seen: set[str],
-        metric: str,
+        category: str,
+        dimension: str,
         bid: int,
         field_name: str,
         increment: int,
         ttl: int,
     ) -> None:
         """Add HINCRBY + EXPIRE (once per key) to the operations list."""
-        key = self._keys.bucket_key(metric, bid)
+        key = self._keys.bucket_key(category, dimension, bid)
         ops.append(("HINCRBY", [key, field_name, increment]))
         if key not in keys_seen:
             keys_seen.add(key)
             ops.append(("EXPIRE", [key, ttl]))
+
+    # -- Heartbeat & index maintenance ------------------------------------------
 
     async def _heartbeat_loop(self) -> None:
         """Background loop that writes gateway presence to the registry."""
@@ -303,38 +417,36 @@ class AnalyticsCollector:
                 logger.warning("Analytics heartbeat error", exc_info=True)
 
     async def _write_heartbeat(self) -> None:
-        """Write gateway presence to the sorted set and info hash."""
+        """Write gateway presence and maintain navigation indexes."""
         now = time.time()
         registry_key = self._keys.registry_key()
         info_key = self._keys.info_key()
-        member = f"{self._config.environment}:{self._config.gateway_id}"
+        member = self._keys.registry_member
         info_ttl = self._config.heartbeat_seconds * 3
 
         host = os.environ.get("MCP_HOST", "0.0.0.0")
         port = os.environ.get("MCP_PORT", "8080")
 
         ops: list[tuple[str, list[Any]]] = [
+            # Registry sorted set
             ("ZADD", [registry_key, {member: now}]),
+            # Gateway info hash
             (
                 "HSET",
                 [
                     info_key,
-                    "host",
-                    host,
-                    "port",
-                    port,
-                    "environment",
-                    self._config.environment,
-                    "gateway_id",
-                    self._config.gateway_id,
-                    "started_at",
-                    str(int(self._started_at)),
-                    "last_heartbeat",
-                    str(int(now)),
-                    "key_prefix",
-                    self._config.key_prefix,
+                    "host", host,
+                    "port", port,
+                    "environment", self._config.environment,
+                    "gateway_id", self._config.gateway_id,
+                    "started_at", str(int(self._started_at)),
+                    "last_heartbeat", str(int(now)),
+                    "key_prefix", self._config.key_prefix,
                 ],
             ),
             ("EXPIRE", [info_key, info_ttl]),
+            # Navigation indexes
+            ("SADD", [self._keys.idx_envs_key(), self._config.environment]),
+            ("SADD", [self._keys.idx_gateways_key(), self._config.gateway_id]),
         ]
         await self._client.execute_pipeline(ops)

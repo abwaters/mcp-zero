@@ -77,7 +77,8 @@ class RedisAnalyticsClient:
         """Execute a batch of Redis commands in a pipeline.
 
         Each operation is a tuple of ``(command_name, [args...])``.
-        Supported commands: ``HINCRBY``, ``EXPIRE``, ``ZADD``, ``HSET``.
+        Supported commands: ``HINCRBY``, ``EXPIRE``, ``ZADD``, ``HSET``,
+        ``SADD``, ``INCR``.
 
         Args:
             operations: List of (command, args) tuples.
@@ -97,6 +98,8 @@ class RedisAnalyticsClient:
                     pipe.zadd(*args)
                 elif cmd_lower == "hset":
                     pipe.hset(*args)
+                elif cmd_lower == "sadd":
+                    pipe.sadd(*args)
                 elif cmd_lower == "incr":
                     pipe.incr(*args)
                 else:

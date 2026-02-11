@@ -58,7 +58,9 @@ class TestAnalyticsCollectorEnqueue:
         client = FakeRedisClient()
         collector = AnalyticsCollector(config, client)
 
-        collector.record_denial(server="s1", tool="t1", user_id="alice", rule_id="r1")
+        collector.record_denial(
+            server="s1", tool="t1", user_id="alice", rule_id="r1"
+        )
         assert collector._queue.qsize() == 1
 
     def test_record_redaction_enqueues(self):
@@ -66,7 +68,29 @@ class TestAnalyticsCollectorEnqueue:
         client = FakeRedisClient()
         collector = AnalyticsCollector(config, client)
 
-        collector.record_redaction(server="s1", tool="t1", entity_type="EMAIL", count=3)
+        collector.record_redaction(
+            server="s1", tool="t1", entity_type="EMAIL", count=3
+        )
+        assert collector._queue.qsize() == 1
+
+    def test_record_output_redaction_enqueues(self):
+        config = _make_config()
+        client = FakeRedisClient()
+        collector = AnalyticsCollector(config, client)
+
+        collector.record_output_redaction(
+            server="s1", tool="t1", entity_type="PERSON", count=2
+        )
+        assert collector._queue.qsize() == 1
+
+    def test_record_masking_failure_enqueues(self):
+        config = _make_config()
+        client = FakeRedisClient()
+        collector = AnalyticsCollector(config, client)
+
+        collector.record_masking_failure(
+            server="s1", tool="t1", direction="input"
+        )
         assert collector._queue.qsize() == 1
 
     def test_record_error_enqueues(self):
@@ -91,7 +115,7 @@ class TestAnalyticsCollectorEnqueue:
 
 
 class TestAnalyticsCollectorBuildOperations:
-    def test_tool_call_generates_correct_ops(self):
+    def test_tool_call_generates_hierarchical_keys(self):
         config = _make_config()
         client = FakeRedisClient()
         collector = AnalyticsCollector(config, client)
@@ -104,27 +128,77 @@ class TestAnalyticsCollectorBuildOperations:
             duration_ms=150.0,
             request_bytes=100,
             response_bytes=200,
+            transport="http",
             timestamp=60000.0,
         )
 
         ops = collector._build_operations([event])
 
-        # Extract just the commands
         commands = [op[0] for op in ops]
         assert "HINCRBY" in commands
         assert "EXPIRE" in commands
 
-        # Check that tool_calls, server_calls, user_calls are all present
         hincrby_keys = [op[1][0] for op in ops if op[0] == "HINCRBY"]
-        assert any("tool_calls" in k for k in hincrby_keys)
-        assert any("server_calls" in k for k in hincrby_keys)
-        assert any("user_calls" in k for k in hincrby_keys)
-        assert any("latency_sum" in k for k in hincrby_keys)
-        assert any("latency_count" in k for k in hincrby_keys)
-        assert any("request_bytes" in k for k in hincrby_keys)
-        assert any("response_bytes" in k for k in hincrby_keys)
+        # Verify hierarchical key pattern: ...:{category}:{dimension}
+        assert any(":calls:tool" in k for k in hincrby_keys)
+        assert any(":calls:server" in k for k in hincrby_keys)
+        assert any(":calls:user" in k for k in hincrby_keys)
+        assert any(":calls:transport" in k for k in hincrby_keys)
+        assert any(":latency:sum" in k for k in hincrby_keys)
+        assert any(":latency:count" in k for k in hincrby_keys)
+        assert any(":sizes:request" in k for k in hincrby_keys)
+        assert any(":sizes:response" in k for k in hincrby_keys)
 
-    def test_denial_generates_correct_ops(self):
+        # Verify gw: prefix in key path
+        assert all(":gw:" in k for k in hincrby_keys)
+
+    def test_tool_call_records_transport(self):
+        config = _make_config()
+        client = FakeRedisClient()
+        collector = AnalyticsCollector(config, client)
+
+        event = AnalyticsEvent(
+            event_type=EventType.TOOL_CALL,
+            server="s1",
+            tool="t1",
+            transport="stdio",
+            timestamp=60000.0,
+        )
+
+        ops = collector._build_operations([event])
+        transport_ops = [
+            op for op in ops
+            if op[0] == "HINCRBY" and ":calls:transport" in op[1][0]
+        ]
+        assert len(transport_ops) == 1
+        assert transport_ops[0][1][1] == "stdio"
+
+    def test_tool_call_tracks_latency_max(self):
+        config = _make_config()
+        client = FakeRedisClient()
+        collector = AnalyticsCollector(config, client)
+
+        events = [
+            AnalyticsEvent(
+                event_type=EventType.TOOL_CALL, server="s1", tool="t1",
+                duration_ms=100.0, timestamp=60000.0,
+            ),
+            AnalyticsEvent(
+                event_type=EventType.TOOL_CALL, server="s1", tool="t1",
+                duration_ms=250.0, timestamp=60000.0,
+            ),
+        ]
+
+        ops = collector._build_operations(events)
+        hset_ops = [
+            op for op in ops
+            if op[0] == "HSET" and ":latency:max" in op[1][0]
+        ]
+        assert len(hset_ops) == 1
+        # Should be the max of 100 and 250
+        assert hset_ops[0][1][2] == "250"
+
+    def test_denial_generates_hierarchical_keys(self):
         config = _make_config()
         client = FakeRedisClient()
         collector = AnalyticsCollector(config, client)
@@ -135,17 +209,40 @@ class TestAnalyticsCollectorBuildOperations:
             tool="t1",
             user_id="bob",
             rule_id="deny-all",
+            reason="policy_deny",
             timestamp=60000.0,
         )
 
         ops = collector._build_operations([event])
         hincrby_keys = [op[1][0] for op in ops if op[0] == "HINCRBY"]
 
-        assert any("denials" in k for k in hincrby_keys)
-        assert any("denial_rules" in k for k in hincrby_keys)
-        assert any("denial_users" in k for k in hincrby_keys)
+        assert any(":denials:tool" in k for k in hincrby_keys)
+        assert any(":denials:rule" in k for k in hincrby_keys)
+        assert any(":denials:user" in k for k in hincrby_keys)
+        assert any(":denials:reason" in k for k in hincrby_keys)
 
-    def test_redaction_generates_correct_ops(self):
+    def test_denial_records_reason(self):
+        config = _make_config()
+        client = FakeRedisClient()
+        collector = AnalyticsCollector(config, client)
+
+        event = AnalyticsEvent(
+            event_type=EventType.DENIAL,
+            server="s1",
+            tool="t1",
+            reason="no_identity",
+            timestamp=60000.0,
+        )
+
+        ops = collector._build_operations([event])
+        reason_ops = [
+            op for op in ops
+            if op[0] == "HINCRBY" and ":denials:reason" in op[1][0]
+        ]
+        assert len(reason_ops) == 1
+        assert reason_ops[0][1][1] == "no_identity"
+
+    def test_redaction_uses_input_key(self):
         config = _make_config()
         client = FakeRedisClient()
         collector = AnalyticsCollector(config, client)
@@ -160,16 +257,60 @@ class TestAnalyticsCollectorBuildOperations:
         )
 
         ops = collector._build_operations([event])
-        hincrby_ops = [op for op in ops if op[0] == "HINCRBY"]
+        hincrby_keys = [op[1][0] for op in ops if op[0] == "HINCRBY"]
 
-        # Should have redactions + redaction_tools
-        assert len(hincrby_ops) == 2
-        # Check the entity_type field name
-        assert any(op[1][1] == "EMAIL_ADDRESS" for op in hincrby_ops)
-        # Check count is 5
-        assert any(op[1][2] == 5 for op in hincrby_ops)
+        assert any(":redactions:input" in k for k in hincrby_keys)
+        assert any(":redactions:tool" in k for k in hincrby_keys)
+        # Verify entity_type as field name
+        input_ops = [
+            op for op in ops
+            if op[0] == "HINCRBY" and ":redactions:input" in op[1][0]
+        ]
+        assert input_ops[0][1][1] == "EMAIL_ADDRESS"
+        assert input_ops[0][1][2] == 5
 
-    def test_error_generates_correct_ops(self):
+    def test_output_redaction_uses_output_key(self):
+        config = _make_config()
+        client = FakeRedisClient()
+        collector = AnalyticsCollector(config, client)
+
+        event = AnalyticsEvent(
+            event_type=EventType.OUTPUT_REDACTION,
+            server="s1",
+            tool="t1",
+            entity_type="PERSON",
+            count=2,
+            timestamp=60000.0,
+        )
+
+        ops = collector._build_operations([event])
+        hincrby_keys = [op[1][0] for op in ops if op[0] == "HINCRBY"]
+
+        assert any(":redactions:output" in k for k in hincrby_keys)
+        assert any(":redactions:tool" in k for k in hincrby_keys)
+
+    def test_masking_failure_uses_fail_key(self):
+        config = _make_config()
+        client = FakeRedisClient()
+        collector = AnalyticsCollector(config, client)
+
+        event = AnalyticsEvent(
+            event_type=EventType.MASKING_FAILURE,
+            server="s1",
+            tool="t1",
+            direction="output",
+            timestamp=60000.0,
+        )
+
+        ops = collector._build_operations([event])
+        fail_ops = [
+            op for op in ops
+            if op[0] == "HINCRBY" and ":redactions:fail" in op[1][0]
+        ]
+        assert len(fail_ops) == 1
+        assert fail_ops[0][1][1] == "output"
+
+    def test_error_generates_hierarchical_key(self):
         config = _make_config()
         client = FakeRedisClient()
         collector = AnalyticsCollector(config, client)
@@ -183,30 +324,29 @@ class TestAnalyticsCollectorBuildOperations:
 
         ops = collector._build_operations([event])
         hincrby_keys = [op[1][0] for op in ops if op[0] == "HINCRBY"]
-        assert any("errors" in k for k in hincrby_keys)
+        assert any(":errors:tool" in k for k in hincrby_keys)
 
     def test_expire_only_once_per_key(self):
         config = _make_config()
         client = FakeRedisClient()
         collector = AnalyticsCollector(config, client)
 
-        # Two events in the same bucket and same metric
         events = [
             AnalyticsEvent(
-                event_type=EventType.TOOL_CALL, server="s1", tool="t1", timestamp=60000.0
+                event_type=EventType.TOOL_CALL, server="s1", tool="t1",
+                timestamp=60000.0,
             ),
             AnalyticsEvent(
-                event_type=EventType.TOOL_CALL, server="s1", tool="t2", timestamp=60000.0
+                event_type=EventType.TOOL_CALL, server="s1", tool="t2",
+                timestamp=60000.0,
             ),
         ]
 
         ops = collector._build_operations(events)
 
-        # Count EXPIRE calls for tool_calls keys
         expire_keys = [op[1][0] for op in ops if op[0] == "EXPIRE"]
-        tool_calls_expires = [k for k in expire_keys if "tool_calls" in k]
-        # Should only be 1 EXPIRE for the tool_calls bucket key
-        assert len(tool_calls_expires) == 1
+        calls_tool_expires = [k for k in expire_keys if ":calls:tool" in k]
+        assert len(calls_tool_expires) == 1
 
 
 class TestAnalyticsCollectorFlush:
@@ -222,7 +362,7 @@ class TestAnalyticsCollectorFlush:
         await collector._flush()
 
         assert collector._queue.qsize() == 0
-        assert len(client.operations) == 1  # One pipeline batch
+        assert len(client.operations) == 1
 
     @pytest.mark.asyncio
     async def test_flush_noop_when_empty(self):
@@ -233,6 +373,31 @@ class TestAnalyticsCollectorFlush:
         await collector._flush()
 
         assert len(client.operations) == 0
+
+
+class TestAnalyticsCollectorHeartbeat:
+    @pytest.mark.asyncio
+    async def test_heartbeat_writes_indexes(self):
+        config = _make_config()
+        client = FakeRedisClient()
+        collector = AnalyticsCollector(config, client)
+
+        await collector._write_heartbeat()
+
+        assert len(client.operations) == 1
+        ops = client.operations[0]
+        commands = [op[0] for op in ops]
+
+        assert "ZADD" in commands
+        assert "HSET" in commands
+        assert "EXPIRE" in commands
+        assert "SADD" in commands
+
+        # Verify SADD writes to idx keys
+        sadd_ops = [op for op in ops if op[0] == "SADD"]
+        sadd_keys = [op[1][0] for op in sadd_ops]
+        assert any(":idx:envs" in k for k in sadd_keys)
+        assert any(":idx:gw:" in k for k in sadd_keys)
 
 
 class TestAnalyticsCollectorLifecycle:
@@ -246,9 +411,8 @@ class TestAnalyticsCollectorLifecycle:
         assert collector._running is True
         assert client.connected is True
 
-        # Enqueue some events and let a flush cycle happen
         collector.record_tool_call(server="s1", tool="t1")
-        await asyncio.sleep(0.2)  # Let flush loop run
+        await asyncio.sleep(0.2)
 
         await collector.stop()
         assert collector._running is False
@@ -260,7 +424,7 @@ class TestAnalyticsCollectorLifecycle:
         collector = AnalyticsCollector(config, client)
 
         await collector.start()
-        await collector.start()  # Should not error
+        await collector.start()
         assert collector._running is True
 
         await collector.stop()
@@ -271,4 +435,4 @@ class TestAnalyticsCollectorLifecycle:
         client = FakeRedisClient()
         collector = AnalyticsCollector(config, client)
 
-        await collector.stop()  # Should not error
+        await collector.stop()

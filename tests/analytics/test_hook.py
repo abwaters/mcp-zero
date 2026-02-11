@@ -61,6 +61,13 @@ def _make_ctx(**kwargs) -> HookContext:
     return HookContext(**defaults)
 
 
+def _drain_queue(collector: AnalyticsCollector) -> list[AnalyticsEvent]:
+    events = []
+    while not collector._queue.empty():
+        events.append(collector._queue.get_nowait())
+    return events
+
+
 class TestAnalyticsHookPreAudit:
     @pytest.mark.asyncio
     async def test_records_tool_call(self):
@@ -89,7 +96,18 @@ class TestAnalyticsHookPreAudit:
         assert event.user_id == ""
 
     @pytest.mark.asyncio
-    async def test_records_redactions_from_masking_events(self):
+    async def test_records_transport(self):
+        collector = _make_collector()
+        hook = AnalyticsHook(collector)
+
+        ctx = _make_ctx(transport="stdio")
+        await hook.on_pre_audit(ctx)
+
+        event = collector._queue.get_nowait()
+        assert event.transport == "stdio"
+
+    @pytest.mark.asyncio
+    async def test_records_input_redactions(self):
         collector = _make_collector()
         hook = AnalyticsHook(collector)
 
@@ -100,13 +118,7 @@ class TestAnalyticsHookPreAudit:
         ctx = _make_ctx(masking_events=masking_events)
         await hook.on_pre_audit(ctx)
 
-        # 1 tool_call + 2 redaction events
-        assert collector._queue.qsize() == 3
-
-        events: list[AnalyticsEvent] = []
-        while not collector._queue.empty():
-            events.append(collector._queue.get_nowait())
-
+        events = _drain_queue(collector)
         tool_calls = [e for e in events if e.event_type == "tool_call"]
         redactions = [e for e in events if e.event_type == "redaction"]
 
@@ -116,6 +128,55 @@ class TestAnalyticsHookPreAudit:
         assert redactions[0].count == 2
         assert redactions[1].entity_type == "PHONE_NUMBER"
         assert redactions[1].count == 1
+
+    @pytest.mark.asyncio
+    async def test_records_masking_failure_on_failed_status(self):
+        collector = _make_collector()
+        hook = AnalyticsHook(collector)
+
+        masking_events = [
+            _FakeMaskingEvent(entity_type="EMAIL_ADDRESS", count=1, status="failed"),
+        ]
+        ctx = _make_ctx(masking_events=masking_events)
+        await hook.on_pre_audit(ctx)
+
+        events = _drain_queue(collector)
+        failures = [e for e in events if e.event_type == "masking_failure"]
+        redactions = [e for e in events if e.event_type == "redaction"]
+
+        assert len(failures) == 1
+        assert failures[0].direction == "input"
+        assert len(redactions) == 0
+
+    @pytest.mark.asyncio
+    async def test_records_output_masking(self):
+        collector = _make_collector()
+        hook = AnalyticsHook(collector)
+
+        ctx = _make_ctx(
+            output_masking_applied=True,
+            output_masked_fields=["content.0.text", "content.1.text"],
+        )
+        await hook.on_pre_audit(ctx)
+
+        events = _drain_queue(collector)
+        output_redactions = [e for e in events if e.event_type == "output_redaction"]
+
+        assert len(output_redactions) == 1
+        assert output_redactions[0].entity_type == "_aggregate"
+        assert output_redactions[0].count == 2
+
+    @pytest.mark.asyncio
+    async def test_no_output_redaction_when_not_applied(self):
+        collector = _make_collector()
+        hook = AnalyticsHook(collector)
+
+        ctx = _make_ctx(output_masking_applied=False)
+        await hook.on_pre_audit(ctx)
+
+        events = _drain_queue(collector)
+        output_redactions = [e for e in events if e.event_type == "output_redaction"]
+        assert len(output_redactions) == 0
 
     @pytest.mark.asyncio
     async def test_measures_payload_sizes(self):
@@ -149,6 +210,42 @@ class TestAnalyticsHookOnError:
         assert event.tool == "test-tool"
         assert event.user_id == "test-user"
         assert event.rule_id == "deny-rule"
+
+    @pytest.mark.asyncio
+    async def test_denial_reason_categorized_as_policy_deny(self):
+        collector = _make_collector()
+        hook = AnalyticsHook(collector)
+
+        ctx = _make_ctx(short_circuit_reason="Policy rule deny-all blocks access")
+        error = ShortCircuitError("Policy deny", deny=True)
+        await hook.on_error(ctx, error)
+
+        event = collector._queue.get_nowait()
+        assert event.reason == "policy_deny"
+
+    @pytest.mark.asyncio
+    async def test_denial_reason_categorized_as_no_identity(self):
+        collector = _make_collector()
+        hook = AnalyticsHook(collector)
+
+        ctx = _make_ctx(short_circuit_reason="Identity token required")
+        error = ShortCircuitError("Identity required", deny=True)
+        await hook.on_error(ctx, error)
+
+        event = collector._queue.get_nowait()
+        assert event.reason == "no_identity"
+
+    @pytest.mark.asyncio
+    async def test_denial_reason_categorized_as_masking_failed(self):
+        collector = _make_collector()
+        hook = AnalyticsHook(collector)
+
+        ctx = _make_ctx(short_circuit_reason="Input masking engine failed")
+        error = ShortCircuitError("Masking failure", deny=True)
+        await hook.on_error(ctx, error)
+
+        event = collector._queue.get_nowait()
+        assert event.reason == "masking_failed"
 
     @pytest.mark.asyncio
     async def test_records_error_on_other_exception(self):

@@ -41,17 +41,38 @@ class AnalyticsHook(LifecycleHook):
             duration_ms=duration_ms,
             request_bytes=request_bytes,
             response_bytes=response_bytes,
+            transport=ctx.transport,
         )
 
-        # Record redactions (input masking)
+        # Record input redactions
         for event in ctx.masking_events:
             if hasattr(event, "entity_type") and hasattr(event, "count"):
-                self._collector.record_redaction(
-                    server=ctx.server_name,
-                    tool=ctx.tool_name,
-                    entity_type=event.entity_type,
-                    count=event.count,
-                )
+                if hasattr(event, "status") and event.status == "failed":
+                    self._collector.record_masking_failure(
+                        server=ctx.server_name,
+                        tool=ctx.tool_name,
+                        direction="input",
+                    )
+                else:
+                    self._collector.record_redaction(
+                        server=ctx.server_name,
+                        tool=ctx.tool_name,
+                        entity_type=event.entity_type,
+                        count=event.count,
+                    )
+
+        # Record output redactions
+        if ctx.output_masking_applied:
+            # Output masking events are on the same masking_events list after
+            # the post-pipeline runs.  We detect output masking via the flag.
+            # For entity-level detail we'd need a separate output_masking_events
+            # field; for now record a tool-level output redaction indicator.
+            self._collector.record_output_redaction(
+                server=ctx.server_name,
+                tool=ctx.tool_name,
+                entity_type="_aggregate",
+                count=len(ctx.output_masked_fields),
+            )
 
         return ctx
 
@@ -63,19 +84,32 @@ class AnalyticsHook(LifecycleHook):
             user_id = ctx.request.identity.user_id
 
         if isinstance(error, ShortCircuitError) and error.deny:
-            # Policy denial
+            # Categorize the denial reason
+            reason = self._categorize_denial(ctx, error)
             self._collector.record_denial(
                 server=ctx.server_name,
                 tool=ctx.tool_name,
                 user_id=user_id,
                 rule_id=ctx.policy_rule_id,
+                reason=reason,
             )
         else:
-            # Other error
             self._collector.record_error(
                 server=ctx.server_name,
                 tool=ctx.tool_name,
             )
+
+    @staticmethod
+    def _categorize_denial(ctx: HookContext, error: Exception) -> str:
+        """Map a denial to a reason category for the denials:reason hash."""
+        reason_text = ctx.short_circuit_reason or str(error)
+        lower = reason_text.lower()
+
+        if "identity" in lower or "token" in lower or "authen" in lower:
+            return "no_identity"
+        if "mask" in lower:
+            return "masking_failed"
+        return "policy_deny"
 
     @staticmethod
     def _measure_size(payload: dict) -> int:
