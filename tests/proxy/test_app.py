@@ -24,6 +24,16 @@ def make_configs():
 
 
 class TestCreateApp:
+    def test_configures_stateful_streamable_http_session_manager(self):
+        mgr = ServerManager(make_configs())
+        proxy = ProxyServer(mgr)
+
+        with patch("mcp_zero.proxy.app.StreamableHTTPSessionManager") as mock_session_mgr_cls:
+            create_app(proxy, mgr)
+
+        mock_session_mgr_cls.assert_called_once()
+        assert mock_session_mgr_cls.call_args.kwargs["stateless"] is False
+
     def test_returns_asgi_app_with_middleware(self):
         mgr = ServerManager(make_configs())
         proxy = ProxyServer(mgr)
