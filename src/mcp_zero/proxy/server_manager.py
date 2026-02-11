@@ -117,9 +117,7 @@ class ServerManager:
                 if transport is not None:
                     await transport.disconnect()
             except Exception:
-                logger.debug(
-                    "Error disconnecting server '%s'", key.server_name, exc_info=True
-                )
+                logger.debug("Error disconnecting server '%s'", key.server_name, exc_info=True)
 
     async def __aenter__(self) -> Self:
         return self
