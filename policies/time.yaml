@@ -1,0 +1,25 @@
+# Policy: time
+# MCP "server-time" via stdio — exposes time/timezone tools.
+# Usage: scripts\run-policy.bat time
+
+version: 1
+default: allow
+
+servers:
+  - name: time
+    transport: stdio
+    command: npx
+    args:
+      - "-y"
+      - "@modelcontextprotocol/server-time"
+
+policies:
+  - id: allow-all
+    description: Allow all tools on the time server
+    effect: allow
+    mcp_servers:
+      - name: time
+        tools: ["*"]
+
+logging:
+  level: DEBUG

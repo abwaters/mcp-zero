@@ -1,0 +1,44 @@
+# Policy: all
+# Combines everything, filesystem, and time MCP servers into one policy.
+# Usage: scripts\run-policy.bat all
+
+version: 1
+default: allow
+
+servers:
+  - name: everything
+    transport: stdio
+    command: npx
+    args:
+      - "-y"
+      - "@modelcontextprotocol/server-everything"
+
+  - name: filesystem
+    transport: stdio
+    command: npx
+    args:
+      - "-y"
+      - "@modelcontextprotocol/server-filesystem"
+      - ".data"
+
+  - name: time
+    transport: stdio
+    command: npx
+    args:
+      - "-y"
+      - "@modelcontextprotocol/server-time"
+
+policies:
+  - id: allow-all
+    description: Allow all tools on all servers
+    effect: allow
+    mcp_servers:
+      - name: everything
+        tools: ["*"]
+      - name: filesystem
+        tools: ["*"]
+      - name: time
+        tools: ["*"]
+
+logging:
+  level: DEBUG
