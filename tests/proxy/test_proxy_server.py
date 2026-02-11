@@ -516,12 +516,18 @@ class TestProxyServerWithAuth:
 
         mock_auth = AsyncMock(spec=AuthProvider)
         mock_auth.get_token = AsyncMock(
-            side_effect=TokenExchangeError("exchange failed", audience="api://weather")
+            side_effect=TokenExchangeError(
+                "Token exchange returned HTTP 401: {\"error\":\"invalid_grant\"}",
+                audience="api://weather",
+            )
         )
 
         proxy = ProxyServer(mgr, auth_provider=mock_auth)
         result = await proxy._call_tool("weather__get_weather", {})
 
         assert len(result) == 1
-        assert "denied" in result[0].text.lower()
-        assert "exchange failed" in result[0].text
+        assert "Access denied" in result[0].text
+        # Internal details must NOT leak to the client
+        assert "HTTP 401" not in result[0].text
+        assert "invalid_grant" not in result[0].text
+        assert "api://weather" not in result[0].text
