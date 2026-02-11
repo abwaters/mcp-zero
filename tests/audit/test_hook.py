@@ -527,6 +527,40 @@ class TestAuditHookFieldFiltering:
 
 
 # ---------------------------------------------------------------------------
+# Bounded event retention
+# ---------------------------------------------------------------------------
+
+
+class TestAuditHookBoundedEvents:
+    @pytest.mark.asyncio
+    async def test_default_max_events(self):
+        hook = AuditHook()
+        assert hook._events.maxlen == AuditHook._DEFAULT_MAX_EVENTS
+
+    @pytest.mark.asyncio
+    async def test_oldest_events_evicted(self):
+        hook = AuditHook(max_events=3)
+        ctx = _make_ctx()
+
+        for _ in range(5):
+            await hook.on_pre_audit(ctx)
+
+        assert len(hook.events) == 3
+        # Oldest events were evicted — only the last 3 remain
+
+    @pytest.mark.asyncio
+    async def test_custom_max_events(self):
+        hook = AuditHook(max_events=10)
+        assert hook._events.maxlen == 10
+
+    @pytest.mark.asyncio
+    async def test_zero_disables_retention(self):
+        """max_events=0 means unlimited (no maxlen on deque)."""
+        hook = AuditHook(max_events=0)
+        assert hook._events.maxlen is None
+
+
+# ---------------------------------------------------------------------------
 # Debug logging safety
 # ---------------------------------------------------------------------------
 
