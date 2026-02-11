@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from collections import defaultdict
+from collections import defaultdict, deque
 from datetime import UTC, datetime
 
 from mcp_zero.audit.event import AuditEvent, AuditEventType, MaskingEventSummary, MaskingSummary
@@ -23,10 +23,22 @@ class AuditHook(LifecycleHook):
     masking summaries (entity types, counts, field paths).
 
     Registered at priority 150 so it runs after all masking hooks.
+
+    In-memory event retention is bounded to ``max_events`` (default 1000)
+    to prevent unbounded memory growth in long-lived processes.  Oldest
+    events are evicted first.  Set ``max_events=0`` to disable in-memory
+    retention entirely (events are still logged as JSON).
     """
 
-    def __init__(self, logging_config: object | None = None) -> None:
-        self._events: list[AuditEvent] = []
+    _DEFAULT_MAX_EVENTS = 1000
+
+    def __init__(
+        self,
+        logging_config: object | None = None,
+        *,
+        max_events: int = _DEFAULT_MAX_EVENTS,
+    ) -> None:
+        self._events: deque[AuditEvent] = deque(maxlen=max_events or None)
         self._include: list[str] | None = None
         if logging_config is not None and hasattr(logging_config, "include"):
             inc = logging_config.include
