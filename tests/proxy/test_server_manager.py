@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from mcp_zero.context import RequestContext
+from mcp_zero.context import RequestContext, UserIdentity
 from mcp_zero.proxy.errors import RoutingError
 from mcp_zero.proxy.server_manager import ServerManager
 from mcp_zero.transport.base import TransportState
@@ -114,6 +114,89 @@ class TestServerManager:
         mock_transport.connect.assert_awaited_once_with(ctx, auth_token="tok")
 
     @pytest.mark.asyncio
+    async def test_different_users_get_different_sessions(self):
+        """Each authenticated user should get an isolated transport session."""
+        mgr = ServerManager(make_configs())
+
+        transport_a = make_mock_transport(connected=False)
+        transport_b = make_mock_transport(connected=False)
+        transports = iter([transport_a, transport_b])
+
+        async def fake_connect_a(ctx=None, *, auth_token=None):
+            transport_a.state = TransportState.CONNECTED
+
+        async def fake_connect_b(ctx=None, *, auth_token=None):
+            transport_b.state = TransportState.CONNECTED
+
+        transport_a.connect = AsyncMock(side_effect=fake_connect_a)
+        transport_b.connect = AsyncMock(side_effect=fake_connect_b)
+
+        ctx_a = RequestContext(identity=UserIdentity(user_id="user-A"))
+        ctx_b = RequestContext(identity=UserIdentity(user_id="user-B"))
+
+        with patch(
+            "mcp_zero.proxy.server_manager.TransportFactory.create",
+            side_effect=lambda _: next(transports),
+        ):
+            session_a = await mgr.get_session("weather", ctx_a, auth_token="tok-A")
+            session_b = await mgr.get_session("weather", ctx_b, auth_token="tok-B")
+
+        # Different users get different sessions
+        assert session_a is transport_a.session
+        assert session_b is transport_b.session
+        assert session_a is not session_b
+
+        # Each transport connected with its own auth token
+        transport_a.connect.assert_awaited_once_with(ctx_a, auth_token="tok-A")
+        transport_b.connect.assert_awaited_once_with(ctx_b, auth_token="tok-B")
+
+    @pytest.mark.asyncio
+    async def test_same_user_reuses_session(self):
+        """Repeated requests from the same user should reuse the transport."""
+        mgr = ServerManager(make_configs())
+        mock_transport = make_mock_transport(connected=False)
+
+        async def fake_connect(ctx=None, *, auth_token=None):
+            mock_transport.state = TransportState.CONNECTED
+
+        mock_transport.connect = AsyncMock(side_effect=fake_connect)
+
+        ctx1 = RequestContext(identity=UserIdentity(user_id="user-A"))
+        ctx2 = RequestContext(identity=UserIdentity(user_id="user-A"))
+
+        with patch(
+            "mcp_zero.proxy.server_manager.TransportFactory.create",
+            return_value=mock_transport,
+        ) as mock_create:
+            session1 = await mgr.get_session("weather", ctx1, auth_token="tok-A")
+            session2 = await mgr.get_session("weather", ctx2, auth_token="tok-A")
+
+        assert session1 is session2
+        mock_create.assert_called_once()
+        mock_transport.connect.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_no_identity_shares_session(self):
+        """Requests without identity share a single transport (no auth to isolate)."""
+        mgr = ServerManager(make_configs())
+        mock_transport = make_mock_transport(connected=False)
+
+        async def fake_connect(ctx=None, *, auth_token=None):
+            mock_transport.state = TransportState.CONNECTED
+
+        mock_transport.connect = AsyncMock(side_effect=fake_connect)
+
+        with patch(
+            "mcp_zero.proxy.server_manager.TransportFactory.create",
+            return_value=mock_transport,
+        ) as mock_create:
+            await mgr.get_session("weather")
+            await mgr.get_session("weather")
+
+        mock_create.assert_called_once()
+        mock_transport.connect.assert_awaited_once()
+
+    @pytest.mark.asyncio
     async def test_disconnect_single(self):
         mgr = ServerManager(make_configs())
         mock_transport = make_mock_transport()
@@ -126,6 +209,39 @@ class TestServerManager:
 
         await mgr.disconnect("weather")
         mock_transport.disconnect.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_disconnect_removes_all_user_sessions_for_server(self):
+        """disconnect(server_name) should remove all per-user transports for that server."""
+        mgr = ServerManager(make_configs())
+
+        transport_a = make_mock_transport(connected=False)
+        transport_b = make_mock_transport(connected=False)
+        transports = iter([transport_a, transport_b])
+
+        async def fake_connect_a(ctx=None, *, auth_token=None):
+            transport_a.state = TransportState.CONNECTED
+
+        async def fake_connect_b(ctx=None, *, auth_token=None):
+            transport_b.state = TransportState.CONNECTED
+
+        transport_a.connect = AsyncMock(side_effect=fake_connect_a)
+        transport_b.connect = AsyncMock(side_effect=fake_connect_b)
+
+        ctx_a = RequestContext(identity=UserIdentity(user_id="user-A"))
+        ctx_b = RequestContext(identity=UserIdentity(user_id="user-B"))
+
+        with patch(
+            "mcp_zero.proxy.server_manager.TransportFactory.create",
+            side_effect=lambda _: next(transports),
+        ):
+            await mgr.get_session("weather", ctx_a, auth_token="tok-A")
+            await mgr.get_session("weather", ctx_b, auth_token="tok-B")
+
+        await mgr.disconnect("weather")
+
+        transport_a.disconnect.assert_awaited_once()
+        transport_b.disconnect.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_disconnect_all(self):
