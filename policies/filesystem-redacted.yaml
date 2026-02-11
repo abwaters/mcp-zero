@@ -1,0 +1,37 @@
+# Policy: filesystem-redacted
+# MCP "server-filesystem" via stdio — exposes .data/ directory with PII redaction.
+# Usage: scripts\run-policy.bat filesystem-redacted
+
+version: 1
+default: allow
+
+servers:
+  - name: filesystem
+    transport: stdio
+    command: npx
+    args:
+      - "-y"
+      - "@modelcontextprotocol/server-filesystem"
+      - ".data"
+
+policies:
+  - id: allow-all
+    description: Allow all tools on the filesystem server
+    effect: allow
+    mcp_servers:
+      - name: filesystem
+        tools: ["*"]
+
+logging:
+  level: DEBUG
+
+masking:
+  presidio:
+    enabled: true
+    entities:
+      - PERSON
+      - EMAIL_ADDRESS
+      - PHONE_NUMBER
+      - CREDIT_CARD
+      - API_KEY
+      - PASSWORD
