@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 
 import uvicorn
 
@@ -233,6 +234,27 @@ def run() -> None:
 
     # Build pipeline with identity + governance hooks
     pipeline = _build_pipeline(identity_config, policy_config)
+
+    # Fail-closed: refuse to start without security controls unless explicitly
+    # opted out via MCP_ALLOW_INSECURE.  This prevents accidentally running
+    # the gateway in production without authn/authz (see issue #52).
+    if pipeline is None:
+        if not _is_insecure_allowed():
+            logger.critical(
+                "REFUSING TO START: No identity provider or policy file configured. "
+                "The gateway would run without authentication, authorization, or "
+                "data protection — this is not safe for production. "
+                "Set MCP_POLICY_FILE to a policy file, or set MCP_ALLOW_INSECURE=true "
+                "to start without security controls (dev/testing only)."
+            )
+            sys.exit(78)  # EX_CONFIG per sysexits.h
+        else:
+            logger.warning(
+                "INSECURE MODE: Starting without authentication or authorization. "
+                "MCP_ALLOW_INSECURE is set — all tool calls will be proxied without "
+                "identity validation, governance checks, or data masking. "
+                "Do NOT use this in production."
+            )
 
     # Build OBO auth provider when Okta OBO env vars are set
     auth_provider = _build_obo_provider(configs)
