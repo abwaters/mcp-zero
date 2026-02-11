@@ -84,9 +84,7 @@ class StreamableHTTPTransport(MCPTransport):
                         http_client=http_client,
                     )
                 )
-                session = await stack.enter_async_context(
-                    ClientSession(read_stream, write_stream)
-                )
+                session = await stack.enter_async_context(ClientSession(read_stream, write_stream))
                 await session.initialize()
 
                 self._session = session
@@ -120,8 +118,7 @@ class StreamableHTTPTransport(MCPTransport):
                     raise exc
                 if isinstance(exc, OSError):
                     raise TransportConnectionError(
-                        f"Failed to connect to '{self._config.name}' "
-                        f"at {self._config.url}: {exc}",
+                        f"Failed to connect to '{self._config.name}' at {self._config.url}: {exc}",
                         server_name=self._config.name,
                         correlation_id=cid,
                     ) from exc
