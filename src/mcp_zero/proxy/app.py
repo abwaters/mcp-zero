@@ -22,7 +22,9 @@ def create_app(
     """Build a Starlette ASGI app that serves the MCP proxy on ``/mcp``."""
     session_manager = StreamableHTTPSessionManager(
         app=proxy_server.mcp_server,
-        stateless=True,
+        # Stateful mode avoids per-request transport teardown, which can trigger
+        # AnyIO cancel-scope violations during stateless cleanup paths.
+        stateless=False,
     )
 
     @contextlib.asynccontextmanager

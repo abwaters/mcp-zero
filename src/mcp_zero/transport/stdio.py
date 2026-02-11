@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contextlib import AsyncExitStack
 
+import anyio
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
@@ -23,6 +24,7 @@ class StdioTransport(MCPTransport):
         super().__init__(*args, **kwargs)  # type: ignore[arg-type]
         self._exit_stack: AsyncExitStack | None = None
         self._last_context: RequestContext | None = None
+        self._owner_task_id: int | None = None
 
     async def connect(
         self, context: RequestContext | None = None, *, auth_token: str | None = None
@@ -58,6 +60,7 @@ class StdioTransport(MCPTransport):
 
             self._exit_stack = stack
             self._session = session
+            self._owner_task_id = id(anyio.get_current_task())
             self._state = TransportState.CONNECTED
         except (FileNotFoundError, PermissionError) as exc:
             self._state = TransportState.ERROR
@@ -89,11 +92,22 @@ class StdioTransport(MCPTransport):
             return
 
         self._state = TransportState.DISCONNECTING
+        current_task_id = id(anyio.get_current_task())
+        if self._owner_task_id is not None and self._owner_task_id != current_task_id:
+            # stdio_client()/ClientSession contexts must be exited by the task
+            # that entered them to satisfy AnyIO's cancel-scope invariants.
+            self._state = TransportState.DISCONNECTED
+            self._session = None
+            self._exit_stack = None
+            self._owner_task_id = None
+            return
+
         try:
             if self._exit_stack is not None:
                 await self._exit_stack.aclose()
                 self._exit_stack = None
             self._session = None
+            self._owner_task_id = None
             self._state = TransportState.DISCONNECTED
         except Exception:
             self._state = TransportState.ERROR

@@ -162,6 +162,22 @@ class TestStdioTransport:
             _ = t.session
 
     @pytest.mark.asyncio
+    async def test_disconnect_from_different_task_skips_exit_stack_close(self, mock_sdk):
+        cfg = make_stdio_config()
+        t = StdioTransport(cfg)
+        await t.connect()
+
+        mock_exit_stack = AsyncMock()
+        t._exit_stack = mock_exit_stack
+        t._owner_task_id = 12345
+
+        with patch("mcp_zero.transport.stdio.anyio.get_current_task", return_value=object()):
+            await t.disconnect()
+
+        mock_exit_stack.aclose.assert_not_awaited()
+        assert t.state == TransportState.DISCONNECTED
+
+    @pytest.mark.asyncio
     async def test_disconnect_idempotent(self, mock_sdk):
         cfg = make_stdio_config()
         t = StdioTransport(cfg)
