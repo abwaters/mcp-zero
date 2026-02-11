@@ -9,6 +9,7 @@ from pathlib import Path
 
 import yaml
 
+from mcp_zero.analytics.config import AnalyticsConfig, RedisConfig
 from mcp_zero.governance.config import (
     IdentityProviderConfig,
     LoggingConfig,
@@ -234,6 +235,11 @@ def _build_policy_config(data: dict, file_path: str) -> PolicyConfig:
     if "masking" in data:
         masking_config = _build_masking(data["masking"])
 
+    # Analytics (optional)
+    analytics_config = None
+    if "analytics" in data:
+        analytics_config = _build_analytics(data["analytics"])
+
     try:
         return PolicyConfig(
             version=version,
@@ -243,6 +249,7 @@ def _build_policy_config(data: dict, file_path: str) -> PolicyConfig:
             policies=rules,
             logging=logging_config,
             masking=masking_config,
+            analytics=analytics_config,
         )
     except ValueError as exc:
         raise PolicyValidationError(str(exc), field="version") from exc
@@ -383,6 +390,40 @@ def _build_masking(data: dict) -> MaskingConfig:
             entities=p.get("entities", []),
         )
     return MaskingConfig(presidio=presidio)
+
+
+def _build_analytics(data: dict) -> AnalyticsConfig:
+    """Build an AnalyticsConfig from a dict."""
+    if not isinstance(data, dict):
+        raise PolicyValidationError("analytics must be a mapping", field="analytics")
+
+    redis_config = RedisConfig()
+    if "redis" in data:
+        r = data["redis"]
+        if not isinstance(r, dict):
+            raise PolicyValidationError(
+                "analytics.redis must be a mapping", field="analytics.redis"
+            )
+        redis_config = RedisConfig(
+            url=r.get("url", ""),
+            cluster=r.get("cluster", False),
+            tls=r.get("tls", False),
+            password=r.get("password"),
+            socket_timeout=float(r.get("socket_timeout", 5.0)),
+            retry_on_timeout=r.get("retry_on_timeout", True),
+        )
+
+    return AnalyticsConfig(
+        redis=redis_config,
+        environment=data.get("environment", "default"),
+        gateway_id=data.get("gateway_id", ""),
+        key_prefix=data.get("key_prefix", "mcpgw"),
+        bucket_seconds=int(data.get("bucket_seconds", 60)),
+        retention_seconds=int(data.get("retention_seconds", 3600)),
+        heartbeat_seconds=int(data.get("heartbeat_seconds", 30)),
+        queue_size=int(data.get("queue_size", 10000)),
+        flush_interval=float(data.get("flush_interval", 1.0)),
+    )
 
 
 def _validate_cross_references(policy: PolicyConfig) -> None:
