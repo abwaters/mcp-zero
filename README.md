@@ -270,22 +270,23 @@ Hooks are registered with priorities and executed in order. Any hook can short-c
 
 How mcp-zero compares to other MCP gateways:
 
-| Capability | mcp-zero | [MintMCP](https://www.mintmcp.com/) | [Microsoft MCP Gateway](https://github.com/microsoft/mcp-gateway) | [Lasso MCP Gateway](https://github.com/lasso-security/mcp-gateway) |
-|---|---|---|---|---|
-| **License** | ✅ MIT | ❌ Commercial SaaS | ✅ MIT | ✅ MIT |
-| **Language** | Python | Proprietary | .NET / C# | Python |
-| **Transport** | ✅ Streamable HTTP, stdio | ✅ HTTP, SSE, stdio | Streamable HTTP only | stdio only |
-| **Authentication** | ✅ Okta OAuth2 JWT, OBO token exchange | ✅ OAuth 2.0, SAML, SSO (Okta, Azure AD) | Azure Entra ID / OAuth 2.0 | ❌ None built-in |
-| **Governance** | ✅ YAML/JSON policy files, default-deny, server/tool/user/group rules | RBAC/ABAC, Virtual MCP role-based endpoints | RBAC via Entra ID roles | ❌ Plugin-based only |
-| **Data protection** | ✅ Inline Presidio masking on inputs and outputs | ✅ PII redaction, secrets scanning, content filtering | ❌ None built-in | Presidio PII + regex secret masking |
-| **Auditing** | ✅ Structured logs with user attribution, correlation IDs, policy decisions | ✅ Immutable audit trail, dashboards, SOC 2 | Azure Application Insights | SQLite-based tool call tracing |
-| **Deployment** | ✅ Self-hosted, lightweight | Managed cloud SaaS (self-hosted available) | Self-hosted on Kubernetes (AKS) | Local proxy process |
-| **Multi-tenant** | ✅ User/group-level policies | ✅ Role-based endpoints | ✅ Resource-level RBAC | ❌ Single-user local proxy |
-| **Primary focus** | Governance + data protection for regulated enterprises | Managed governance + deployment platform | Scalable Kubernetes routing + lifecycle management | Security guardrails for local MCP usage |
+| Capability | mcp-zero | [AgentGateway](https://github.com/agentgateway/agentgateway) | [MintMCP](https://www.mintmcp.com/) | [Microsoft MCP Gateway](https://github.com/microsoft/mcp-gateway) | [Lasso MCP Gateway](https://github.com/lasso-security/mcp-gateway) |
+|---|---|---|---|---|---|
+| **License** | ✅ MIT | ✅ Apache 2.0 (Linux Foundation) | ❌ Commercial SaaS | ✅ MIT | ✅ MIT |
+| **Language** | Python | Rust / Go | Proprietary | .NET / C# | Python |
+| **Transport** | ✅ Streamable HTTP, stdio | ✅ Streamable HTTP, SSE, stdio | ✅ HTTP, SSE, stdio | Streamable HTTP only | stdio only |
+| **Authentication** | ✅ Okta OAuth2 JWT, OBO token exchange | ✅ JWT, API keys, OAuth (Auth0, Keycloak), MCP auth spec | ✅ OAuth 2.0, SAML, SSO (Okta, Azure AD) | Azure Entra ID / OAuth 2.0 | ❌ None built-in |
+| **Governance** | ✅ YAML/JSON policy files, default-deny, server/tool/user/group rules | ✅ RBAC, Cedar policy engine, rate limiting | RBAC/ABAC, Virtual MCP role-based endpoints | RBAC via Entra ID roles | ❌ Plugin-based only |
+| **Data protection** | ✅ Inline Presidio masking on inputs and outputs | ❌ None built-in | ✅ PII redaction, secrets scanning, content filtering | ❌ None built-in | Presidio PII + regex secret masking |
+| **Auditing** | ✅ Structured logs with user attribution, correlation IDs, policy decisions | ✅ OpenTelemetry metrics, logs, distributed tracing | ✅ Immutable audit trail, dashboards, SOC 2 | Azure Application Insights | SQLite-based tool call tracing |
+| **Deployment** | ✅ Self-hosted, lightweight | ✅ Self-hosted (binary, Docker, Kubernetes) | Managed cloud SaaS (self-hosted available) | Self-hosted on Kubernetes (AKS) | Local proxy process |
+| **Multi-tenant** | ✅ User/group-level policies | ✅ Multi-tenant with per-tenant resources | ✅ Role-based endpoints | ✅ Resource-level RBAC | ❌ Single-user local proxy |
+| **Primary focus** | Governance + data protection for regulated enterprises | High-performance connectivity + observability for agentic AI at scale | Managed governance + deployment platform | Scalable Kubernetes routing + lifecycle management | Security guardrails for local MCP usage |
 
 ### When to choose what
 
 - **mcp-zero** — You need a self-hosted, lightweight gateway with policy-as-code governance, inline PII masking, and structured audit logging for compliance. No vendor lock-in, no cloud dependency.
+- **AgentGateway** — You need a high-performance, Rust-based proxy for agent-to-agent and agent-to-tool connectivity at scale, with OpenTelemetry observability and Cedar-based policy. Strong fit if you need A2A protocol support or LLM gateway routing alongside MCP. No built-in PII masking.
 - **MintMCP** — You want a managed SaaS platform that handles deployment, hosting, and governance with minimal operational overhead. Budget for commercial licensing.
 - **Microsoft MCP Gateway** — You're already on Azure/AKS and need Kubernetes-native MCP server orchestration with Entra ID integration. Bring your own data protection and policy engine.
 - **Lasso MCP Gateway** — You need a lightweight local proxy focused on secret/PII masking for individual developer workstations. Advanced features require the commercial Lasso platform.
