@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 from collections.abc import AsyncIterator
 
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
@@ -13,6 +14,8 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from mcp_zero.proxy.middleware import AuthHeaderMiddleware
 from mcp_zero.proxy.proxy_server import ProxyServer
 from mcp_zero.proxy.server_manager import ServerManager
+
+logger = logging.getLogger(__name__)
 
 
 def create_app(
@@ -29,11 +32,16 @@ def create_app(
 
     @contextlib.asynccontextmanager
     async def lifespan(app: Starlette) -> AsyncIterator[None]:
-        async with session_manager.run():
-            try:
+        try:
+            async with session_manager.run():
                 yield
-            finally:
-                await server_manager.disconnect_all()
+        except BaseExceptionGroup:
+            # The session manager's task group may raise an ExceptionGroup
+            # when cancelled during shutdown (e.g. active SSE streams).
+            # This is expected — suppress it for a clean exit.
+            logger.debug("Session manager tasks cancelled during shutdown", exc_info=True)
+        finally:
+            await server_manager.disconnect_all()
 
     async def mcp_asgi(scope: Scope, receive: Receive, send: Send) -> None:
         await session_manager.handle_request(scope, receive, send)

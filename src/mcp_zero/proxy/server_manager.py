@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Self
 
 from mcp import ClientSession
@@ -12,6 +13,8 @@ from mcp_zero.proxy.errors import RoutingError
 from mcp_zero.transport.base import MCPTransport
 from mcp_zero.transport.config import ServerConfig
 from mcp_zero.transport.factory import TransportFactory
+
+logger = logging.getLogger(__name__)
 
 
 class ServerManager:
@@ -81,7 +84,10 @@ class ServerManager:
         """Disconnect all transports for clean shutdown."""
         names = list(self._transports.keys())
         for name in names:
-            await self.disconnect(name)
+            try:
+                await self.disconnect(name)
+            except Exception:
+                logger.debug("Error disconnecting server '%s'", name, exc_info=True)
 
     async def __aenter__(self) -> Self:
         return self

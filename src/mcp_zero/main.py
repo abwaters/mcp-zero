@@ -251,4 +251,9 @@ def run() -> None:
     )
 
     logger.info("Starting mcp-zero gateway on %s:%d", host, port)
-    uvicorn.run(app, host=host, port=port)
+    uvicorn.run(
+        app,
+        host=host,
+        port=port,
+        timeout_graceful_shutdown=5,
+    )
