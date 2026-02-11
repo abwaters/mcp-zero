@@ -1,6 +1,10 @@
 # mcp-zero
 
-Enterprise MCP Gateway — a centrally hosted control point that enforces governance, identity, data protection, and auditing for [Model Context Protocol](https://modelcontextprotocol.io) traffic in regulated enterprise environments.
+An open-source gateway that sits between your enterprise AI tools and MCP servers to enforce the security controls that compliance teams require before approving [MCP](https://modelcontextprotocol.io) adoption.
+
+Without it, AI tools can call any MCP server with no access control, no audit trail, and no data protection — a non-starter in regulated environments. mcp-zero adds the missing governance layer: it validates user identity, checks policy rules, masks sensitive data, and logs every action — all inline, before requests ever reach downstream servers.
+
+Deploy it as a single Python service. Configure it with a YAML policy file. No agents to install, no SaaS dependency, no vendor lock-in.
 
 ```
 Enterprise AI Tool ──► MCP Gateway ──► MCP Servers
@@ -10,49 +14,14 @@ Enterprise AI Tool ──► MCP Gateway ──► MCP Servers
           (Okta)     (Policy)    (Presidio)
 ```
 
-## Why
-
-Without a gateway, MCP adoption is blocked by security and compliance concerns. AI tools can call arbitrary MCP servers with no access control, no audit trail, and no data protection. mcp-zero provides the minimum viable control surface to make MCP approvable in enterprise environments:
-
-- **Only approved tools are accessible** — default-deny policies by user, group, server, and tool
-- **Actions are attributable to real users** — Okta OAuth2 JWT validation with group resolution
-- **Sensitive data is masked** — Presidio-based PII/secret detection on inputs and outputs
-- **All activity is auditable** — structured logs with correlation IDs and policy decisions
-
 ## Features
 
-### Identity & Authentication
-- Okta OAuth2 JWT validation at the gateway edge
-- User identity resolution (user_id, email, groups) from token claims
-- On-Behalf-Of (OBO) token exchange for downstream MCP servers
-- Configurable claim mapping
-
-### Governance
-- Static YAML/JSON policy files, loaded at startup
-- Default-deny with explicit allow/deny rules
-- Server, tool, user, and group-level access control
-- Wildcard patterns for tools (e.g., `read_*`, `delete_*`)
-- Top-down evaluation with explicit deny override
-
-### Data Protection
-- Microsoft Presidio integration for PII/secret detection and masking
-- Built-in entity types: PERSON, EMAIL_ADDRESS, PHONE_NUMBER, CREDIT_CARD
-- Custom recognizers for API_KEY and PASSWORD patterns
-- Inline masking — sensitive data is replaced before reaching downstream servers
-
-### Transport
-- **Streamable HTTP** — proxy to remote MCP servers with OBO token exchange
-- **stdio** — spawn and manage local MCP server processes as subprocesses
-
-### Pipeline Architecture
-Hook-based lifecycle with ordered execution points:
-
-```
-PRE_VALIDATION → POST_VALIDATION → PRE_MASKING → POST_MASKING → PRE_AUDIT
-     │                  │                │                            │
- IdentityHook     GovernanceHook    MaskingHook                  AuditHook
- (priority 10)    (priority 50)    (priority 75)               (priority 150)
-```
+- **Identity** — Okta OAuth2 JWT validation with on-behalf-of token exchange for downstream servers
+- **Governance** — YAML policy files with default-deny rules scoped to server, tool, user, and group
+- **Data Protection** — Inline PII and secret masking via Microsoft Presidio on both inputs and outputs
+- **Auditing** — Structured logs with user attribution, correlation IDs, and policy decisions
+- **Transport** — Streamable HTTP for remote servers, stdio for gateway-managed local processes
+- **Pipeline** — Hook-based request lifecycle with ordered execution and short-circuit support
 
 ## Quick Start
 
