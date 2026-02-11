@@ -140,18 +140,27 @@ class LoggingConfig:
 
     Args:
         level: Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL).
+        format: Output format — ``"json"`` (default) or ``"text"`` for
+            human-readable colored output.
         include: List of log categories to include.
     """
 
     _VALID_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
+    _VALID_FORMATS = frozenset({"json", "text"})
 
     level: str = "INFO"
+    format: str = "json"
     include: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if self.level.upper() not in self._VALID_LEVELS:
             raise ValueError(
                 f"logging.level must be one of {sorted(self._VALID_LEVELS)}, got '{self.level}'"
+            )
+        if self.format.lower() not in self._VALID_FORMATS:
+            raise ValueError(
+                f"logging.format must be one of {sorted(self._VALID_FORMATS)}, "
+                f"got '{self.format}'"
             )
 
 

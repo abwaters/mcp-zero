@@ -114,7 +114,13 @@ class ProxyServer:
         try:
             auth_token = await self._auth_provider.get_token(server_name, context)
         except TokenExchangeError as exc:
-            logger.warning("Token exchange failed for '%s': %s", server_name, exc)
+            logger.warning(
+                "Token exchange failed for '%s' (correlation_id=%s): %s",
+                server_name,
+                context.correlation_id,
+                exc,
+                exc_info=True,
+            )
             return [
                 types.TextContent(
                     type="text",
@@ -190,6 +196,14 @@ class ProxyServer:
                 await asyncio.sleep(delay)
 
         # All retries exhausted
+        logger.error(
+            "Upstream '%s' failed after %d attempts (correlation_id=%s, tool=%s): %s",
+            server_name,
+            config.max_retries + 1,
+            context.correlation_id,
+            tool_name,
+            last_error,
+        )
         raise UpstreamError(
             f"Upstream '{server_name}' failed after {config.max_retries + 1} attempts: "
             f"{last_error}",

@@ -183,6 +183,7 @@ class TestLoggingConfig:
     def test_defaults(self):
         lc = LoggingConfig()
         assert lc.level == "INFO"
+        assert lc.format == "json"
         assert lc.include == []
 
     def test_valid_levels(self):
@@ -193,6 +194,15 @@ class TestLoggingConfig:
     def test_invalid_level(self):
         with pytest.raises(ValueError, match="logging.level must be one of"):
             LoggingConfig(level="TRACE")
+
+    def test_valid_formats(self):
+        for fmt in ("json", "text"):
+            lc = LoggingConfig(format=fmt)
+            assert lc.format == fmt
+
+    def test_invalid_format(self):
+        with pytest.raises(ValueError, match="logging.format must be one of"):
+            LoggingConfig(format="xml")
 
     def test_frozen(self):
         lc = LoggingConfig()
