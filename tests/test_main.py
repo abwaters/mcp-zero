@@ -179,12 +179,26 @@ class TestBuildIdentityPipeline:
 
 
 class TestRun:
-    @patch("mcp_zero.main.uvicorn")
-    def test_starts_uvicorn(self, mock_uvicorn, monkeypatch):
+    def test_refuses_startup_without_config(self, monkeypatch):
+        """Gateway refuses to start without identity/policy config (fail-closed)."""
         monkeypatch.delenv("MCP_UPSTREAM_URL", raising=False)
         monkeypatch.delenv("MCP_POLICY_FILE", raising=False)
         monkeypatch.delenv("OKTA_ISSUER", raising=False)
         monkeypatch.delenv("OKTA_AUDIENCE", raising=False)
+        monkeypatch.delenv("MCP_ALLOW_INSECURE", raising=False)
+
+        with pytest.raises(SystemExit) as exc_info:
+            run()
+        assert exc_info.value.code == 78
+
+    @patch("mcp_zero.main.uvicorn")
+    def test_starts_insecure_with_allow_insecure(self, mock_uvicorn, monkeypatch):
+        """Gateway starts without config when MCP_ALLOW_INSECURE is set."""
+        monkeypatch.delenv("MCP_UPSTREAM_URL", raising=False)
+        monkeypatch.delenv("MCP_POLICY_FILE", raising=False)
+        monkeypatch.delenv("OKTA_ISSUER", raising=False)
+        monkeypatch.delenv("OKTA_AUDIENCE", raising=False)
+        monkeypatch.setenv("MCP_ALLOW_INSECURE", "true")
         monkeypatch.setenv("MCP_HOST", "127.0.0.1")
         monkeypatch.setenv("MCP_PORT", "9999")
 
