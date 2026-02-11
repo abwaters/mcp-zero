@@ -161,7 +161,6 @@ class TestStdioTransport:
         with pytest.raises(TransportClosedError):
             _ = t.session
 
-
     @pytest.mark.asyncio
     async def test_disconnect_from_different_task_skips_exit_stack_close(self, mock_sdk):
         cfg = make_stdio_config()
