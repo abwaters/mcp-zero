@@ -90,61 +90,71 @@ def _build_pipeline(
     identity_config: IdentityConfig | None = None,
     policy_config: PolicyConfig | None = None,
 ) -> Pipeline | None:
-    """Build a Pipeline with identity and governance hooks.
+    """Build a Pipeline with identity, governance, masking, and audit hooks.
+
+    Identity and governance hooks are only registered when their configuration
+    is present.  Masking and audit hooks are registered whenever a policy file
+    is loaded, even without identity — so data protection works in local/demo
+    setups that don't use OAuth2.
 
     If *identity_config* is provided (from a policy file), it is used directly.
     Otherwise falls back to ``OKTA_ISSUER`` / ``OKTA_AUDIENCE`` env vars.
-
-    If *policy_config* is provided, a GovernanceHook is registered at priority 50
-    (after IdentityHook at priority 10) to enforce allow/deny policies.
     """
+    registry = HookRegistry()
+    identity_enabled = False
+
+    # --- Identity hook (optional) ---
     if identity_config is None:
         issuer = os.environ.get("OKTA_ISSUER", "")
         audience = os.environ.get("OKTA_AUDIENCE", "")
 
-        if not issuer:
-            logger.info("OKTA_ISSUER not set — identity validation disabled")
-            return None
-
-        if not audience:
+        if issuer and audience:
+            identity_config = IdentityConfig(
+                issuer=issuer, audience=audience, allow_insecure=_is_insecure_allowed()
+            )
+        elif issuer and not audience:
             logger.warning(
                 "OKTA_ISSUER set but OKTA_AUDIENCE missing — identity validation disabled"
             )
-            return None
 
-        identity_config = IdentityConfig(
-            issuer=issuer, audience=audience, allow_insecure=_is_insecure_allowed()
-        )
+    if identity_config is not None:
+        jwks_client = JWKSClient(identity_config)
+        validator = JWTValidator(identity_config, jwks_client)
+        identity_hook = IdentityHook(validator)
+        registry.register(identity_hook, priority=10)
+        identity_enabled = True
+        logger.info("Identity validation enabled (issuer=%s)", identity_config.issuer)
+    else:
+        logger.info("Identity validation disabled — no identity configuration found")
 
-    jwks_client = JWKSClient(identity_config)
-    validator = JWTValidator(identity_config, jwks_client)
-    identity_hook = IdentityHook(validator)
-
-    registry = HookRegistry()
-    registry.register(identity_hook, priority=10)
-
+    # --- Governance hook (requires policy file) ---
     if policy_config is not None:
         engine = PolicyEngine(policy_config)
-        governance_hook = GovernanceHook(engine)
+        governance_hook = GovernanceHook(engine, identity_required=identity_enabled)
         registry.register(governance_hook, priority=50)
         logger.info("Governance policy enforcement enabled (%d rules)", len(policy_config.policies))
 
-        if policy_config.masking.presidio.enabled:
-            masking_engine = PresidioMaskingEngine(policy_config.masking.presidio)
-            masking_hook = MaskingHook(masking_engine, policy_config.masking.presidio)
-            registry.register(masking_hook, priority=75)
-            logger.info(
-                "Presidio masking enabled (entities=%s)",
-                ", ".join(policy_config.masking.presidio.entities),
-            )
+    # --- Masking hook (requires policy file with presidio enabled) ---
+    if policy_config is not None and policy_config.masking.presidio.enabled:
+        masking_engine = PresidioMaskingEngine(policy_config.masking.presidio)
+        masking_hook = MaskingHook(masking_engine, policy_config.masking.presidio)
+        registry.register(masking_hook, priority=75)
+        logger.info(
+            "Presidio masking enabled (entities=%s)",
+            ", ".join(policy_config.masking.presidio.entities),
+        )
 
+    # --- Audit hook (always registered when pipeline exists) ---
     logging_config = policy_config.logging if policy_config else None
     audit_hook = AuditHook(logging_config=logging_config)
     registry.register(audit_hook, priority=150)
 
-    registry.build()
+    # Only build the pipeline if at least one functional hook was registered
+    if not identity_enabled and policy_config is None:
+        logger.info("No identity or policy configuration — pipeline disabled")
+        return None
 
-    logger.info("Identity validation enabled (issuer=%s)", identity_config.issuer)
+    registry.build()
     return Pipeline(registry)
 
 

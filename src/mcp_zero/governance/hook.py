@@ -24,15 +24,20 @@ class GovernanceHook(LifecycleHook):
     consulting the engine.
     """
 
-    def __init__(self, engine: PolicyEngine) -> None:
+    def __init__(self, engine: PolicyEngine, *, identity_required: bool = True) -> None:
         self._engine = engine
+        self._identity_required = identity_required
 
     async def on_post_validation(self, ctx: HookContext) -> HookContext:
         identity = ctx.request.identity
         correlation_id = ctx.request.correlation_id
 
-        # Fail-closed: no identity means we cannot evaluate policy
-        if identity is None:
+        # When no identity provider is configured, evaluate policy with an
+        # anonymous identity so that subject-free rules (e.g. default-allow
+        # policies for local/demo usage) still work.  If an identity provider
+        # *is* configured but the identity is missing, that means authentication
+        # failed — deny (fail-closed).
+        if identity is None and self._identity_required:
             logger.warning(
                 "No authenticated identity — denying request "
                 "(correlation_id=%s, server=%s, tool=%s)",
@@ -42,9 +47,12 @@ class GovernanceHook(LifecycleHook):
             )
             raise ShortCircuitError("No authenticated identity", deny=True)
 
+        user_id = identity.user_id if identity else "anonymous"
+        groups = list(identity.groups) if identity else []
+
         policy_input = PolicyInput(
-            user_id=identity.user_id,
-            groups=list(identity.groups),
+            user_id=user_id,
+            groups=groups,
             mcp_server=ctx.server_name,
             tool=ctx.tool_name,
         )
@@ -54,7 +62,7 @@ class GovernanceHook(LifecycleHook):
         if result.effect == PolicyEffect.ALLOW:
             logger.info(
                 "Policy ALLOW: user=%s server=%s tool=%s policy_id=%s correlation_id=%s",
-                identity.user_id,
+                user_id,
                 ctx.server_name,
                 ctx.tool_name,
                 result.policy_id or "",
@@ -69,7 +77,7 @@ class GovernanceHook(LifecycleHook):
         reason = result.reason or "Denied by policy"
         logger.warning(
             "Policy DENY: user=%s server=%s tool=%s policy_id=%s correlation_id=%s reason=%s",
-            identity.user_id,
+            user_id,
             ctx.server_name,
             ctx.tool_name,
             result.policy_id or "",
