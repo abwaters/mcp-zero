@@ -1,0 +1,25 @@
+# Policy: everything
+# MCP "server-everything" via stdio — open access, no identity required.
+# Usage: scripts\run-policy.bat everything
+
+version: 1
+default: allow
+
+servers:
+  - name: everything
+    transport: stdio
+    command: npx
+    args:
+      - "-y"
+      - "@modelcontextprotocol/server-everything"
+
+policies:
+  - id: allow-all
+    description: Allow all tools on the everything server
+    effect: allow
+    mcp_servers:
+      - name: everything
+        tools: ["*"]
+
+logging:
+  level: DEBUG
