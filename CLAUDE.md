@@ -38,6 +38,15 @@ All scripts activate `.venv` automatically. The package is installed in editable
 - `src/mcp_zero/__main__.py` — enables `python -m mcp_zero`
 - `tests/` — pytest tests, configured via `[tool.pytest.ini_options]` in pyproject.toml
 
+## Pre-Commit Checklist
+
+**IMPORTANT**: Before every git commit, always run:
+
+1. `ruff format src tests` — auto-format all source and test files
+2. `ruff check src tests` — verify no lint errors
+
+CI will reject PRs that fail `ruff format --check`. Do not skip this step.
+
 ## Key Design Decisions
 
 - **Python 3.12+** required

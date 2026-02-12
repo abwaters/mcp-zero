@@ -517,3 +517,88 @@ class TestHTTPSEnforcement:
         config = convert_to_identity_config(policy)
         assert config.issuer == "http://example.okta.com"
         assert config.allow_insecure is True
+
+
+class TestPluginsParsing:
+    def test_valid_plugins_section(self, tmp_path):
+        data = _minimal_policy()
+        data["plugins"] = [
+            {"name": "my-plugin", "package": "my-pkg", "config": {"key": "val"}},
+        ]
+        path = tmp_path / "policy.yaml"
+        path.write_text(yaml.dump(data))
+        policy = load_policy_file(str(path))
+        assert len(policy.plugins) == 1
+        assert policy.plugins[0].name == "my-plugin"
+        assert policy.plugins[0].package == "my-pkg"
+        assert policy.plugins[0].config == {"key": "val"}
+
+    def test_missing_plugins_section_defaults_empty(self, tmp_path):
+        data = _minimal_policy()
+        path = tmp_path / "policy.yaml"
+        path.write_text(yaml.dump(data))
+        policy = load_policy_file(str(path))
+        assert policy.plugins == []
+
+    def test_plugins_not_list_raises(self, tmp_path):
+        data = _minimal_policy()
+        data["plugins"] = "not a list"
+        path = tmp_path / "policy.yaml"
+        path.write_text(yaml.dump(data))
+        with pytest.raises(PolicyValidationError, match="plugins must be a list"):
+            load_policy_file(str(path))
+
+    def test_plugin_missing_name_raises(self, tmp_path):
+        data = _minimal_policy()
+        data["plugins"] = [{"package": "some-pkg"}]
+        path = tmp_path / "policy.yaml"
+        path.write_text(yaml.dump(data))
+        with pytest.raises(PolicyValidationError, match="plugin.name is required"):
+            load_policy_file(str(path))
+
+    def test_duplicate_plugin_names_raises(self, tmp_path):
+        data = _minimal_policy()
+        data["plugins"] = [
+            {"name": "dup"},
+            {"name": "dup"},
+        ]
+        path = tmp_path / "policy.yaml"
+        path.write_text(yaml.dump(data))
+        with pytest.raises(PolicyValidationError, match="Duplicate plugin name: 'dup'"):
+            load_policy_file(str(path))
+
+    def test_plugin_with_all_fields(self, tmp_path):
+        data = _minimal_policy()
+        data["plugins"] = [
+            {
+                "name": "full-plugin",
+                "package": "full-pkg",
+                "config": {"a": 1, "b": "two"},
+                "priority": 42,
+            },
+        ]
+        path = tmp_path / "policy.yaml"
+        path.write_text(yaml.dump(data))
+        policy = load_policy_file(str(path))
+        assert len(policy.plugins) == 1
+        p = policy.plugins[0]
+        assert p.name == "full-plugin"
+        assert p.package == "full-pkg"
+        assert p.config == {"a": 1, "b": "two"}
+        assert p.priority == 42
+
+    def test_plugin_package_defaults_to_name(self, tmp_path):
+        data = _minimal_policy()
+        data["plugins"] = [{"name": "my-plugin"}]
+        path = tmp_path / "policy.yaml"
+        path.write_text(yaml.dump(data))
+        policy = load_policy_file(str(path))
+        assert policy.plugins[0].package == "my-plugin"
+
+    def test_plugin_not_mapping_raises(self, tmp_path):
+        data = _minimal_policy()
+        data["plugins"] = ["not-a-dict"]
+        path = tmp_path / "policy.yaml"
+        path.write_text(yaml.dump(data))
+        with pytest.raises(PolicyValidationError, match="plugins\\[0\\] must be a mapping"):
+            load_policy_file(str(path))

@@ -14,6 +14,7 @@ from mcp_zero.governance.config import (
     IdentityProviderConfig,
     LoggingConfig,
     MaskingConfig,
+    PluginDeclaration,
     PolicyConfig,
     PolicyEffect,
     PolicyRule,
@@ -240,6 +241,11 @@ def _build_policy_config(data: dict, file_path: str) -> PolicyConfig:
     if "analytics" in data:
         analytics_config = _build_analytics(data["analytics"])
 
+    # Plugins (optional)
+    plugins: list[PluginDeclaration] = []
+    if "plugins" in data:
+        plugins = _build_plugins(data["plugins"])
+
     try:
         return PolicyConfig(
             version=version,
@@ -250,6 +256,7 @@ def _build_policy_config(data: dict, file_path: str) -> PolicyConfig:
             logging=logging_config,
             masking=masking_config,
             analytics=analytics_config,
+            plugins=plugins,
         )
     except ValueError as exc:
         raise PolicyValidationError(str(exc), field="version") from exc
@@ -424,6 +431,35 @@ def _build_analytics(data: dict) -> AnalyticsConfig:
         queue_size=int(data.get("queue_size", 10000)),
         flush_interval=float(data.get("flush_interval", 1.0)),
     )
+
+
+def _build_plugins(data: list) -> list[PluginDeclaration]:
+    """Build a list of PluginDeclaration from parsed data."""
+    if not isinstance(data, list):
+        raise PolicyValidationError("plugins must be a list", field="plugins")
+
+    declarations: list[PluginDeclaration] = []
+    seen_names: set[str] = set()
+
+    for i, item in enumerate(data):
+        if not isinstance(item, dict):
+            raise PolicyValidationError(f"plugins[{i}] must be a mapping", field=f"plugins[{i}]")
+        try:
+            decl = PluginDeclaration(
+                name=item.get("name", ""),
+                package=item.get("package", item.get("name", "")),
+                config=item.get("config", {}),
+                priority=item.get("priority"),
+            )
+        except ValueError as exc:
+            raise PolicyValidationError(str(exc), field=f"plugins[{i}]") from exc
+
+        if decl.name in seen_names:
+            raise PolicyValidationError(f"Duplicate plugin name: '{decl.name}'", field="plugins")
+        seen_names.add(decl.name)
+        declarations.append(decl)
+
+    return declarations
 
 
 def _validate_cross_references(policy: PolicyConfig) -> None:
