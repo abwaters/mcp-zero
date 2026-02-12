@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import atexit
 import logging
 import os
 import sys
@@ -23,8 +24,8 @@ from mcp_zero.governance.loader import (
 from mcp_zero.identity import IdentityConfig, IdentityHook, JWKSClient, JWTValidator
 from mcp_zero.identity.obo import OBOClient, OBOConfig
 from mcp_zero.logging import configure_logging
-from mcp_zero.masking import MaskingHook, PresidioMaskingEngine
 from mcp_zero.pipeline import HookRegistry, Pipeline
+from mcp_zero.plugin_manager import PluginManager
 from mcp_zero.proxy.app import create_app
 from mcp_zero.proxy.auth import AuthProvider
 from mcp_zero.proxy.obo_auth import OBOAuthProvider, ServerOBOSettings
@@ -154,7 +155,7 @@ def _build_pipeline(
     identity_config: IdentityConfig | None = None,
     policy_config: PolicyConfig | None = None,
     analytics_collector: AnalyticsCollector | None = None,
-) -> Pipeline | None:
+) -> tuple[Pipeline | None, PluginManager]:
     """Build a Pipeline with identity, governance, masking, analytics, and audit hooks.
 
     Identity and governance hooks are only registered when their configuration
@@ -164,8 +165,13 @@ def _build_pipeline(
 
     If *identity_config* is provided (from a policy file), it is used directly.
     Otherwise falls back to ``OKTA_ISSUER`` / ``OKTA_AUDIENCE`` env vars.
+
+    Returns:
+        A tuple of (pipeline, plugin_manager).  The pipeline may be ``None``
+        when no identity or policy configuration is found.
     """
     registry = HookRegistry()
+    plugin_manager = PluginManager()
     identity_enabled = False
 
     # --- Identity hook (optional) ---
@@ -199,15 +205,10 @@ def _build_pipeline(
         registry.register(governance_hook, priority=50)
         logger.info("Governance policy enforcement enabled (%d rules)", len(policy_config.policies))
 
-    # --- Masking hook (requires policy file with presidio enabled) ---
-    if policy_config is not None and policy_config.masking.presidio.enabled:
-        masking_engine = PresidioMaskingEngine(policy_config.masking.presidio)
-        masking_hook = MaskingHook(masking_engine, policy_config.masking.presidio)
-        registry.register(masking_hook, priority=75)
-        logger.info(
-            "Presidio masking enabled (entities=%s)",
-            ", ".join(policy_config.masking.presidio.entities),
-        )
+    # --- Plugins (loaded from policy file declarations) ---
+    if policy_config is not None and policy_config.plugins:
+        plugin_manager.load_plugins(policy_config.plugins, registry)
+        logger.info("Loaded %d plugin(s)", len(policy_config.plugins))
 
     # --- Analytics hook (optional, requires collector) ---
     if analytics_collector is not None:
@@ -223,10 +224,10 @@ def _build_pipeline(
     # Only build the pipeline if at least one functional hook was registered
     if not identity_enabled and policy_config is None:
         logger.info("No identity or policy configuration — pipeline disabled")
-        return None
+        return None, plugin_manager
 
     registry.build()
-    return Pipeline(registry)
+    return Pipeline(registry), plugin_manager
 
 
 def _build_obo_provider(configs: list[ServerConfig]) -> AuthProvider | None:
@@ -318,8 +319,9 @@ def run() -> None:
     else:
         logger.info("Analytics disabled — no Redis URL configured")
 
-    # Build pipeline with identity + governance hooks
-    pipeline = _build_pipeline(identity_config, policy_config, analytics_collector)
+    # Build pipeline with identity + governance + plugin hooks
+    pipeline, plugin_manager = _build_pipeline(identity_config, policy_config, analytics_collector)
+    atexit.register(plugin_manager.teardown_all)
 
     # Fail-closed: refuse to start without security controls unless explicitly
     # opted out via MCP_ALLOW_INSECURE.  This prevents accidentally running
@@ -356,16 +358,16 @@ def run() -> None:
     fmt = os.environ.get("LOG_FORMAT", "json").strip().lower()
     if policy_config and policy_config.logging:
         fmt = policy_config.logging.format
-    masking_active = policy_config is not None and policy_config.masking.presidio.enabled
     analytics_active = analytics_collector is not None
+    plugin_count = len(plugin_manager.loaded_plugins)
     logger.info(
-        "Gateway ready: servers=%d, identity=%s, governance=%s, masking=%s, "
-        "analytics=%s, log_format=%s, log_level=%s",
+        "Gateway ready: servers=%d, identity=%s, governance=%s, "
+        "analytics=%s, plugins=%d, log_format=%s, log_level=%s",
         len(configs),
         "enabled" if pipeline else "disabled",
         "enabled (%d rules)" % len(policy_config.policies) if policy_config else "disabled",
-        "enabled" if masking_active else "disabled",
         "enabled" if analytics_active else "disabled",
+        plugin_count,
         fmt,
         logging.getLogger().level,
     )

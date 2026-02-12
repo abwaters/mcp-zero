@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import Any
 
 from mcp_zero.analytics.config import AnalyticsConfig
 from mcp_zero.url_validation import require_https
@@ -189,6 +190,27 @@ class MaskingConfig:
 
 
 @dataclass(frozen=True)
+class PluginDeclaration:
+    """A plugin declared in the policy file.
+
+    Args:
+        name: Plugin identifier (required).
+        package: Entry-point package name (defaults to name if empty).
+        config: Plugin-specific configuration dict.
+        priority: Optional priority override for hook registration.
+    """
+
+    name: str = ""
+    package: str = ""
+    config: dict[str, Any] = field(default_factory=dict)
+    priority: int | None = None
+
+    def __post_init__(self) -> None:
+        if not self.name:
+            raise ValueError("plugin.name is required")
+
+
+@dataclass(frozen=True)
 class PolicyConfig:
     """Root policy configuration.
 
@@ -210,6 +232,7 @@ class PolicyConfig:
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     masking: MaskingConfig = field(default_factory=MaskingConfig)
     analytics: AnalyticsConfig | None = None
+    plugins: list[PluginDeclaration] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if self.version != 1:
