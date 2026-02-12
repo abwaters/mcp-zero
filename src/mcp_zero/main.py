@@ -8,6 +8,10 @@ import sys
 
 import uvicorn
 
+from mcp_zero.analytics import AnalyticsConfig, AnalyticsHook
+from mcp_zero.analytics.client import RedisAnalyticsClient
+from mcp_zero.analytics.collector import AnalyticsCollector
+from mcp_zero.analytics.config import RedisConfig
 from mcp_zero.audit import AuditHook
 from mcp_zero.governance import GovernanceHook, PolicyConfig, PolicyEngine
 from mcp_zero.governance.errors import GovernanceError
@@ -87,11 +91,71 @@ def _load_policy_and_configs() -> tuple[
     return configs, identity_config, policy
 
 
+def _build_analytics_config(policy_config: PolicyConfig | None) -> AnalyticsConfig | None:
+    """Build an AnalyticsConfig from policy file and/or environment variables.
+
+    Environment variables override policy file values.  Analytics is enabled
+    when a Redis URL is configured via either source.
+    """
+    # Start from policy file config or defaults
+    if policy_config is not None and policy_config.analytics is not None:
+        config = policy_config.analytics
+    else:
+        config = None
+
+    # Check env var overrides
+    redis_url = os.environ.get("ANALYTICS_REDIS_URL", "")
+    if not redis_url and (config is None or not config.redis.url):
+        return None  # Analytics not configured
+
+    # Build Redis config with env var overrides
+    base_redis = config.redis if config else RedisConfig()
+    redis_config = RedisConfig(
+        url=redis_url or base_redis.url,
+        cluster=_env_bool("ANALYTICS_REDIS_CLUSTER", base_redis.cluster),
+        tls=base_redis.tls,
+        password=os.environ.get("ANALYTICS_REDIS_PASSWORD", base_redis.password),
+        socket_timeout=base_redis.socket_timeout,
+        retry_on_timeout=base_redis.retry_on_timeout,
+    )
+
+    env_default = config.environment if config else "default"
+    gw_default = config.gateway_id if config else ""
+    prefix_default = config.key_prefix if config else "mcpgw"
+    retention_default = config.retention_seconds if config else 3600
+
+    return AnalyticsConfig(
+        redis=redis_config,
+        environment=os.environ.get("ANALYTICS_ENVIRONMENT", env_default),
+        gateway_id=os.environ.get("ANALYTICS_GATEWAY_ID", gw_default),
+        key_prefix=os.environ.get("ANALYTICS_KEY_PREFIX", prefix_default),
+        bucket_seconds=config.bucket_seconds if config else 60,
+        retention_seconds=int(
+            os.environ.get(
+                "ANALYTICS_RETENTION_SECONDS",
+                str(retention_default),
+            )
+        ),
+        heartbeat_seconds=config.heartbeat_seconds if config else 30,
+        queue_size=config.queue_size if config else 10000,
+        flush_interval=config.flush_interval if config else 1.0,
+    )
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    """Read a boolean from an env var, falling back to *default*."""
+    val = os.environ.get(name, "").strip().lower()
+    if not val:
+        return default
+    return val in ("1", "true", "yes")
+
+
 def _build_pipeline(
     identity_config: IdentityConfig | None = None,
     policy_config: PolicyConfig | None = None,
+    analytics_collector: AnalyticsCollector | None = None,
 ) -> Pipeline | None:
-    """Build a Pipeline with identity, governance, masking, and audit hooks.
+    """Build a Pipeline with identity, governance, masking, analytics, and audit hooks.
 
     Identity and governance hooks are only registered when their configuration
     is present.  Masking and audit hooks are registered whenever a policy file
@@ -144,6 +208,12 @@ def _build_pipeline(
             "Presidio masking enabled (entities=%s)",
             ", ".join(policy_config.masking.presidio.entities),
         )
+
+    # --- Analytics hook (optional, requires collector) ---
+    if analytics_collector is not None:
+        analytics_hook = AnalyticsHook(analytics_collector)
+        registry.register(analytics_hook, priority=145)
+        logger.info("Analytics hook registered")
 
     # --- Audit hook (always registered when pipeline exists) ---
     logging_config = policy_config.logging if policy_config else None
@@ -232,8 +302,24 @@ def run() -> None:
     if not configs:
         logger.info("No upstream servers configured — starting in pass-through mode")
 
+    # Build analytics collector (optional — enabled when Redis URL is configured)
+    analytics_config = _build_analytics_config(policy_config)
+    analytics_collector: AnalyticsCollector | None = None
+    if analytics_config is not None and analytics_config.enabled:
+        redis_client = RedisAnalyticsClient(analytics_config.redis)
+        analytics_collector = AnalyticsCollector(analytics_config, redis_client)
+        logger.info(
+            "Analytics enabled: redis=%s, env=%s, gw=%s, retention=%ds",
+            analytics_config.redis.url,
+            analytics_config.environment,
+            analytics_config.gateway_id,
+            analytics_config.retention_seconds,
+        )
+    else:
+        logger.info("Analytics disabled — no Redis URL configured")
+
     # Build pipeline with identity + governance hooks
-    pipeline = _build_pipeline(identity_config, policy_config)
+    pipeline = _build_pipeline(identity_config, policy_config, analytics_collector)
 
     # Fail-closed: refuse to start without security controls unless explicitly
     # opted out via MCP_ALLOW_INSECURE.  This prevents accidentally running
@@ -261,7 +347,7 @@ def run() -> None:
 
     server_manager = ServerManager(configs)
     proxy_server = ProxyServer(server_manager, pipeline=pipeline, auth_provider=auth_provider)
-    app = create_app(proxy_server, server_manager)
+    app = create_app(proxy_server, server_manager, analytics_collector=analytics_collector)
 
     host = os.environ.get("MCP_HOST", "0.0.0.0")
     port = int(os.environ.get("MCP_PORT", "8080"))
@@ -271,13 +357,15 @@ def run() -> None:
     if policy_config and policy_config.logging:
         fmt = policy_config.logging.format
     masking_active = policy_config is not None and policy_config.masking.presidio.enabled
+    analytics_active = analytics_collector is not None
     logger.info(
         "Gateway ready: servers=%d, identity=%s, governance=%s, masking=%s, "
-        "log_format=%s, log_level=%s",
+        "analytics=%s, log_format=%s, log_level=%s",
         len(configs),
         "enabled" if pipeline else "disabled",
         "enabled (%d rules)" % len(policy_config.policies) if policy_config else "disabled",
         "enabled" if masking_active else "disabled",
+        "enabled" if analytics_active else "disabled",
         fmt,
         logging.getLogger().level,
     )

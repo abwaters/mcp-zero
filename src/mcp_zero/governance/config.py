@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from mcp_zero.analytics.config import AnalyticsConfig
 from mcp_zero.url_validation import require_https
 
 
@@ -208,6 +209,7 @@ class PolicyConfig:
     policies: list[PolicyRule] = field(default_factory=list)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     masking: MaskingConfig = field(default_factory=MaskingConfig)
+    analytics: AnalyticsConfig | None = None
 
     def __post_init__(self) -> None:
         if self.version != 1:
