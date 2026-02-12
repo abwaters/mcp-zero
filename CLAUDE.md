@@ -72,3 +72,5 @@ The gateway sits between enterprise AI tools and MCP servers:
 - **Transports**: Streamable HTTP and stdio (both enforce full pipeline when configured)
 
 Both HTTP and stdio transports enforce governance, masking, and auditing through the same unified pipeline when configured.
+
+- **Analytics**: Optional Redis-based analytics subsystem (`src/mcp_zero/analytics/`). Enabled by setting `ANALYTICS_REDIS_URL`. See README for all `ANALYTICS_*` env vars. Use `docker compose up` to run Redis + RedisInsight locally.
