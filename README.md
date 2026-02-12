@@ -143,6 +143,13 @@ The gateway starts on `0.0.0.0:8080` by default (configurable via `MCP_HOST` and
 | `OKTA_TOKEN_ENDPOINT` | Okta token exchange endpoint (for OBO) | _(none)_ |
 | `OKTA_CLIENT_ID` | Gateway client ID (for OBO) | _(none)_ |
 | `OKTA_CLIENT_SECRET` | Gateway client secret (for OBO) | _(none)_ |
+| `ANALYTICS_REDIS_URL` | Redis connection URL (enables analytics when set) | _(none)_ |
+| `ANALYTICS_REDIS_CLUSTER` | Use Redis Cluster client | `false` |
+| `ANALYTICS_REDIS_PASSWORD` | Redis authentication password | _(none)_ |
+| `ANALYTICS_ENVIRONMENT` | Analytics key namespace (e.g. `production`) | `default` |
+| `ANALYTICS_GATEWAY_ID` | Unique gateway instance ID | _(auto-generated)_ |
+| `ANALYTICS_KEY_PREFIX` | Redis key prefix for analytics | `mcpgw` |
+| `ANALYTICS_RETENTION_SECONDS` | TTL for analytics keys in seconds | `3600` |
 
 When `MCP_POLICY_FILE` is set, its identity section takes precedence over `OKTA_*` env vars.
 

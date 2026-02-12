@@ -9,13 +9,10 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends nodejs && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies first for layer caching
+# Copy source and install
 COPY pyproject.toml ./
-RUN pip install --no-cache-dir .
-
-# Copy source and install in editable mode
 COPY src/ src/
-RUN pip install --no-cache-dir -e .
+RUN pip install --no-cache-dir .
 
 # Copy policy files
 COPY policies/ policies/
