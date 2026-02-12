@@ -407,9 +407,7 @@ class TestStdioInputMasking:
         )
         async with ServerManager([config]) as mgr:
             proxy = ProxyServer(mgr, pipeline=pipeline)
-            await proxy._call_tool(
-                "test-stdio__echo", {"text": "Call John Smith at 555-123-4567"}
-            )
+            await proxy._call_tool("test-stdio__echo", {"text": "Call John Smith at 555-123-4567"})
 
         # Find the TOOL_INVOCATION events (request phase)
         tool_events = [
@@ -596,9 +594,7 @@ class TestStdioMaskingFailClosed:
         )
         async with ServerManager([config]) as mgr:
             proxy = ProxyServer(mgr, pipeline=pipeline)
-            result = await proxy._call_tool(
-                "test-stdio__echo", {"text": "sensitive data"}
-            )
+            result = await proxy._call_tool("test-stdio__echo", {"text": "sensitive data"})
 
         assert "Access denied" in result[0].text
 
@@ -769,9 +765,7 @@ class TestStdioFullPipeline:
         )
         async with ServerManager([config]) as mgr:
             proxy = ProxyServer(mgr, pipeline=pipeline)
-            result = await proxy._call_tool(
-                "test-stdio__echo", {"text": "no sensitive data here"}
-            )
+            result = await proxy._call_tool("test-stdio__echo", {"text": "no sensitive data here"})
 
         assert result[0].text == "no sensitive data here"
 

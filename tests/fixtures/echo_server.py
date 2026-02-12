@@ -63,9 +63,7 @@ def _build_server() -> Server:
         ]
 
     @server.call_tool()
-    async def call_tool(
-        name: str, arguments: dict | None
-    ) -> list[TextContent]:
+    async def call_tool(name: str, arguments: dict | None) -> list[TextContent]:
         arguments = arguments or {}
 
         if name == "echo":
@@ -81,10 +79,7 @@ def _build_server() -> Server:
             return [
                 TextContent(
                     type="text",
-                    text=(
-                        "Contact John Smith at john.smith@example.com "
-                        "or call 555-123-4567."
-                    ),
+                    text=("Contact John Smith at john.smith@example.com or call 555-123-4567."),
                 )
             ]
 
