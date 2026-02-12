@@ -43,7 +43,7 @@ jobs:
             exit 1
           fi
           {
-            echo "text<<'EOF'"
+            echo "text<<EOF"
             cat "$PROMPT_PATH"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
