@@ -61,6 +61,7 @@ jobs:
           claude_args: |
             --model ${{ github.event.inputs.model }}
             --max-turns 40
+            --allowedTools "Bash(git:*),Bash(gh pr create:*),Bash(gh pr view:*),Edit,Read,Write,Glob,Grep"
 
       # Optional: surface a quick summary in logs (the action itself posts updates/comments as it runs).
       - name: Done
