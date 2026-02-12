@@ -21,3 +21,4 @@ htmlcov/
 
 # Data
 .data/
+.claude/settings.local.json
