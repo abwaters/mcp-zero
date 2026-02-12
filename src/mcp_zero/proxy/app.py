@@ -11,6 +11,7 @@ from starlette.applications import Starlette
 from starlette.routing import Mount
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from mcp_zero.analytics.collector import AnalyticsCollector
 from mcp_zero.proxy.middleware import AuthHeaderMiddleware
 from mcp_zero.proxy.proxy_server import ProxyServer
 from mcp_zero.proxy.server_manager import ServerManager
@@ -21,6 +22,8 @@ logger = logging.getLogger(__name__)
 def create_app(
     proxy_server: ProxyServer,
     server_manager: ServerManager,
+    *,
+    analytics_collector: AnalyticsCollector | None = None,
 ) -> ASGIApp:
     """Build a Starlette ASGI app that serves the MCP proxy on ``/mcp``."""
     session_manager = StreamableHTTPSessionManager(
@@ -32,6 +35,10 @@ def create_app(
 
     @contextlib.asynccontextmanager
     async def lifespan(app: Starlette) -> AsyncIterator[None]:
+        # Start analytics collector background tasks
+        if analytics_collector is not None:
+            await analytics_collector.start()
+
         try:
             async with session_manager.run():
                 yield
@@ -41,6 +48,9 @@ def create_app(
             # This is expected — suppress it for a clean exit.
             logger.debug("Session manager tasks cancelled during shutdown", exc_info=True)
         finally:
+            # Stop analytics collector before disconnecting servers
+            if analytics_collector is not None:
+                await analytics_collector.stop()
             await server_manager.disconnect_all()
 
     async def mcp_asgi(scope: Scope, receive: Receive, send: Send) -> None:
