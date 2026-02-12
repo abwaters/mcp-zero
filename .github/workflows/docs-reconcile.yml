@@ -1,0 +1,68 @@
+name: Claude - Reconcile Docs (PR)
+
+on:
+  workflow_dispatch:
+    inputs:
+      prompt_path:
+        description: "Path to the prompt markdown file"
+        required: false
+        default: ".claude/prompts/docs-reconcile.md"
+        type: string
+      model:
+        description: "Claude model (optional; leave default unless you need Opus)"
+        required: false
+        default: "claude-sonnet-4-5"
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: claude-docs-reconcile
+  cancel-in-progress: false
+
+jobs:
+  reconcile-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read prompt file
+        id: prompt
+        shell: bash
+        run: |
+          set -euo pipefail
+          PROMPT_PATH="${{ github.event.inputs.prompt_path }}"
+          if [[ ! -f "$PROMPT_PATH" ]]; then
+            echo "Prompt file not found: $PROMPT_PATH" >&2
+            exit 1
+          fi
+          {
+            echo "text<<'EOF'"
+            cat "$PROMPT_PATH"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Run Claude Code Action (automation mode)
+        uses: anthropics/claude-code-action@v1
+        with:
+          # Uses your installed Claude GitHub App integration for repo write operations.
+          # The action still needs an API key in secrets for Claude calls (Anthropic direct API).
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+
+          # Feed the prompt from the repo file.
+          prompt: ${{ steps.prompt.outputs.text }}
+
+          # Optional tuning.
+          claude_args: |
+            --model ${{ github.event.inputs.model }}
+            --max-turns 40
+
+      # Optional: surface a quick summary in logs (the action itself posts updates/comments as it runs).
+      - name: Done
+        run: echo "Claude docs reconciliation run completed."
