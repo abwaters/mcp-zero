@@ -52,9 +52,7 @@ jobs:
       - name: Run Claude Code Action (automation mode)
         uses: anthropics/claude-code-action@v1
         with:
-          # Uses your installed Claude GitHub App integration for repo write operations.
-          # The action still needs an API key in secrets for Claude calls (Anthropic direct API).
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 
           # Feed the prompt from the repo file.
           prompt: ${{ steps.prompt.outputs.text }}
