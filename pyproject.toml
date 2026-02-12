@@ -22,6 +22,9 @@ dependencies = [
 [project.scripts]
 mcp-zero = "mcp_zero.main:run"
 
+[project.entry-points."mcp_zero.plugins"]
+presidio-masking = "mcp_zero.plugins.presidio_masking:PresidioMaskingPlugin"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",

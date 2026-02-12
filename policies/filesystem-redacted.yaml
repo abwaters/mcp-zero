@@ -25,13 +25,13 @@ policies:
 logging:
   level: DEBUG
 
-masking:
-  presidio:
-    enabled: true
-    entities:
-      - PERSON
-      - EMAIL_ADDRESS
-      - PHONE_NUMBER
-      - CREDIT_CARD
-      - API_KEY
-      - PASSWORD
+plugins:
+  - name: presidio-masking
+    config:
+      entities:
+        - PERSON
+        - EMAIL_ADDRESS
+        - PHONE_NUMBER
+        - CREDIT_CARD
+        - API_KEY
+        - PASSWORD

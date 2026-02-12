@@ -8,6 +8,7 @@ from mcp_zero.governance.config import (
     IdentityProviderConfig,
     LoggingConfig,
     MaskingConfig,
+    PluginDeclaration,
     PolicyConfig,
     PolicyEffect,
     PolicyRule,
@@ -281,3 +282,49 @@ class TestPolicyConfig:
         assert len(pc.policies) == 1
         assert pc.logging.level == "DEBUG"
         assert pc.masking.presidio.enabled is True
+
+
+class TestPluginDeclaration:
+    def test_valid_construction(self):
+        pd = PluginDeclaration(name="my-plugin", package="my-pkg", config={"k": "v"}, priority=10)
+        assert pd.name == "my-plugin"
+        assert pd.package == "my-pkg"
+        assert pd.config == {"k": "v"}
+        assert pd.priority == 10
+
+    def test_name_required(self):
+        with pytest.raises(ValueError, match="plugin.name is required"):
+            PluginDeclaration()
+
+    def test_empty_name_raises(self):
+        with pytest.raises(ValueError, match="plugin.name is required"):
+            PluginDeclaration(name="")
+
+    def test_package_defaults_to_empty_string(self):
+        pd = PluginDeclaration(name="x")
+        assert pd.package == ""
+
+    def test_config_defaults_to_empty_dict(self):
+        pd = PluginDeclaration(name="x")
+        assert pd.config == {}
+
+    def test_priority_defaults_to_none(self):
+        pd = PluginDeclaration(name="x")
+        assert pd.priority is None
+
+    def test_frozen(self):
+        pd = PluginDeclaration(name="x")
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            pd.name = "y"  # type: ignore[misc]
+
+
+class TestPolicyConfigPlugins:
+    def test_plugins_default_empty(self):
+        pc = PolicyConfig(version=1)
+        assert pc.plugins == []
+
+    def test_plugins_with_declarations(self):
+        pd = PluginDeclaration(name="p1")
+        pc = PolicyConfig(version=1, plugins=[pd])
+        assert len(pc.plugins) == 1
+        assert pc.plugins[0].name == "p1"

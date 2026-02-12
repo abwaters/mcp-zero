@@ -5,6 +5,7 @@ from unittest.mock import patch
 import pytest
 import yaml
 
+from mcp_zero.governance.config import PluginDeclaration, PolicyConfig
 from mcp_zero.governance.errors import PolicyFileError
 from mcp_zero.identity.config import IdentityConfig
 from mcp_zero.main import (
@@ -15,6 +16,8 @@ from mcp_zero.main import (
     run,
 )
 from mcp_zero.pipeline import Pipeline
+from mcp_zero.plugin import BasePlugin
+from mcp_zero.plugin_manager import PluginLoadError, PluginManager
 from mcp_zero.proxy.middleware import AuthHeaderMiddleware
 
 
@@ -151,31 +154,80 @@ class TestBuildIdentityPipeline:
     def test_no_issuer_returns_none(self, monkeypatch):
         monkeypatch.delenv("OKTA_ISSUER", raising=False)
         monkeypatch.delenv("OKTA_AUDIENCE", raising=False)
-        assert _build_pipeline() is None
+        pipeline, plugin_manager = _build_pipeline()
+        assert pipeline is None
+        assert isinstance(plugin_manager, PluginManager)
 
     def test_issuer_without_audience_returns_none(self, monkeypatch):
         monkeypatch.setenv("OKTA_ISSUER", "https://okta.example.com")
         monkeypatch.delenv("OKTA_AUDIENCE", raising=False)
-        assert _build_pipeline() is None
+        pipeline, plugin_manager = _build_pipeline()
+        assert pipeline is None
+        assert isinstance(plugin_manager, PluginManager)
 
     def test_with_issuer_and_audience_returns_pipeline(self, monkeypatch):
         monkeypatch.setenv("OKTA_ISSUER", "https://okta.example.com")
         monkeypatch.setenv("OKTA_AUDIENCE", "my-app")
-        result = _build_pipeline()
-        assert isinstance(result, Pipeline)
+        pipeline, plugin_manager = _build_pipeline()
+        assert isinstance(pipeline, Pipeline)
+        assert isinstance(plugin_manager, PluginManager)
 
     def test_with_identity_config_returns_pipeline(self):
         config = IdentityConfig(issuer="https://okta.example.com", audience="my-app")
-        result = _build_pipeline(identity_config=config)
-        assert isinstance(result, Pipeline)
+        pipeline, plugin_manager = _build_pipeline(identity_config=config)
+        assert isinstance(pipeline, Pipeline)
+        assert isinstance(plugin_manager, PluginManager)
 
     def test_identity_config_skips_env_vars(self, monkeypatch):
         """When identity_config is provided, env vars are not needed."""
         monkeypatch.delenv("OKTA_ISSUER", raising=False)
         monkeypatch.delenv("OKTA_AUDIENCE", raising=False)
         config = IdentityConfig(issuer="https://okta.example.com", audience="my-app")
-        result = _build_pipeline(identity_config=config)
-        assert isinstance(result, Pipeline)
+        pipeline, plugin_manager = _build_pipeline(identity_config=config)
+        assert isinstance(pipeline, Pipeline)
+        assert isinstance(plugin_manager, PluginManager)
+
+
+class TestBuildPipelinePlugins:
+    def test_no_plugins_in_policy(self, monkeypatch):
+        monkeypatch.delenv("OKTA_ISSUER", raising=False)
+        monkeypatch.delenv("OKTA_AUDIENCE", raising=False)
+        policy = PolicyConfig(version=1)
+        pipeline, plugin_manager = _build_pipeline(policy_config=policy)
+        assert plugin_manager.loaded_plugins == []
+
+    def test_plugins_loaded_when_declared(self, monkeypatch):
+        monkeypatch.delenv("OKTA_ISSUER", raising=False)
+        monkeypatch.delenv("OKTA_AUDIENCE", raising=False)
+
+        # Set up a fake entry point
+        ep = type("EP", (), {"name": "test-plugin", "load": lambda self: BasePlugin})()
+        monkeypatch.setattr(
+            "mcp_zero.plugin_manager.importlib.metadata.entry_points",
+            lambda group: [ep],
+        )
+
+        policy = PolicyConfig(
+            version=1,
+            plugins=[PluginDeclaration(name="test-plugin", package="test-plugin")],
+        )
+        pipeline, plugin_manager = _build_pipeline(policy_config=policy)
+        assert len(plugin_manager.loaded_plugins) == 1
+
+    def test_missing_plugin_raises(self, monkeypatch):
+        monkeypatch.delenv("OKTA_ISSUER", raising=False)
+        monkeypatch.delenv("OKTA_AUDIENCE", raising=False)
+        monkeypatch.setattr(
+            "mcp_zero.plugin_manager.importlib.metadata.entry_points",
+            lambda group: [],
+        )
+
+        policy = PolicyConfig(
+            version=1,
+            plugins=[PluginDeclaration(name="nonexistent", package="nonexistent")],
+        )
+        with pytest.raises(PluginLoadError, match="not found"):
+            _build_pipeline(policy_config=policy)
 
 
 class TestRun:
