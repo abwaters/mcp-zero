@@ -1,5 +1,10 @@
 # Plugin Architecture Design
 
+> **STATUS**: This document describes a planned feature that is **NOT YET IMPLEMENTED**.
+> The plugin architecture described here does not exist in the current codebase.
+> Presidio masking is currently hardcoded, not plugin-based.
+> This is a design specification for future implementation.
+
 ## Problem Statement
 
 The gateway's cross-cutting concerns (identity, governance, masking, auditing) are

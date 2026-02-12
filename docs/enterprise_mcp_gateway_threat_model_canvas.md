@@ -62,25 +62,55 @@ This canvas documents **what the MCP Gateway mitigates** and **what risks are ex
 
 ---
 
-### 6. stdio Server Governance
-**Threat:** Gateway-managed MCP servers spawned via stdio operate without governance or auditing.
+### 6. Unauthorized Tool Invocation
+**Threat:** Users invoke tools on gateway-managed servers without proper authorization checks.
 
 **Mitigation:**
-- When MCP servers are spawned by the gateway via stdio, governance policies, data masking, and audit logging apply identically to HTTP-connected servers
-- The gateway wraps all stdio communication with the same policy evaluation, Presidio masking, and audit emission pipeline
-- The enforcement boundary is the gateway, not the transport — stdio servers managed by the gateway receive the same controls as HTTP servers
+- All tool calls (tools/call) run through the full enforcement pipeline (governance, masking, audit), regardless of transport (HTTP or stdio)
+- Governance policies evaluate every tool invocation before execution
+- Policy decisions (allow/deny) are audited with user attribution
+
+**Limitation:**
+- Tool listing (tools/list) does not enforce per-user authorization — all connected users can see the same tool catalog
+
+---
+
+### 7. On-Behalf-Of Token Exchange
+**Threat:** HTTP MCP servers receive gateway credentials instead of user-scoped tokens.
+
+**Mitigation:**
+- OBO token exchange is available for HTTP servers when explicitly configured per-server
+- When enabled, the gateway exchanges inbound user tokens for server-scoped tokens
+- Downstream servers receive tokens that maintain user identity and scope
+
+**Limitation:**
+- OBO requires explicit per-server configuration in policy files (not automatic)
+- stdio servers do not support OBO (process-local execution model)
 
 ---
 
 ## Threats Explicitly Accepted
 
-### 1. Local Developer MCP Usage
-**Risk:** Developers run MCP clients locally without gateway enforcement, including local stdio-based MCP servers not routed through the gateway.
+### 1. Tool Discovery Information Disclosure
+**Risk:** All authenticated users can see the full tool catalog via tools/list, regardless of per-user authorization rules.
+
+**Rationale:**
+- Current implementation does not enforce per-user authorization on tool listing
+- Tool invocation (tools/call) remains protected by governance policies
+
+**Compensating Controls:**
+- Tool names and descriptions should not contain sensitive information
+- Enforcement occurs at execution time (tools/call), preventing unauthorized usage
+
+---
+
+### 2. Local Developer MCP Usage
+**Risk:** Developers run MCP clients locally without gateway enforcement, connecting directly to MCP servers outside the gateway.
 
 **Rationale:**
 - MCP protocol does not mandate centralized enforcement
 - Endpoint control is out of scope for this product
-- Local stdio connections between developer tools and MCP servers bypass the gateway entirely
+- Direct client-to-server connections that bypass the gateway cannot be controlled by the gateway
 
 **Compensating Controls:**
 - Monitoring (e.g., CrowdStrike)
@@ -88,7 +118,7 @@ This canvas documents **what the MCP Gateway mitigates** and **what risks are ex
 
 ---
 
-### 2. Malicious Tool Logic
+### 3. Malicious Tool Logic
 **Risk:** Approved MCP tools behave maliciously or unexpectedly.
 
 **Rationale:**
@@ -100,7 +130,7 @@ This canvas documents **what the MCP Gateway mitigates** and **what risks are ex
 
 ---
 
-### 3. Over-Masking or Under-Masking
+### 4. Over-Masking or Under-Masking
 **Risk:** Presidio misses sensitive data or masks too aggressively.
 
 **Rationale:**
@@ -112,7 +142,7 @@ This canvas documents **what the MCP Gateway mitigates** and **what risks are ex
 
 ---
 
-### 4. Denial of Service via Gateway
+### 5. Denial of Service via Gateway
 **Risk:** Gateway outage blocks MCP usage.
 
 **Rationale:**
@@ -128,7 +158,7 @@ This canvas documents **what the MCP Gateway mitigates** and **what risks are ex
 - Endpoint compromise
 - Insider threats outside MCP usage
 - Full DLP or intent classification
-- stdio as a transport is not inherently less secure — the enforcement boundary is the gateway, not the wire protocol
+- Transport-layer security (both HTTP and stdio support TLS/encryption at lower layers when needed)
 
 ---
 

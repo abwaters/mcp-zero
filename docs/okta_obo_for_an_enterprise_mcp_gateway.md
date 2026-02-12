@@ -1,3 +1,10 @@
+> **IMPLEMENTATION STATUS**: The OBO token exchange infrastructure described in this document is **FULLY IMPLEMENTED** and operational in the codebase.
+> However, it requires explicit configuration via environment variables (`OKTA_TOKEN_ENDPOINT`, `OKTA_CLIENT_ID`, `OKTA_CLIENT_SECRET`) and per-server policy settings (`token_exchange: true`, `target_audience`).
+> When OBO is not configured or not enabled for a server, **no authorization token** (neither exchanged nor original) is forwarded to that downstream server.
+> This document describes the implemented architecture and its configuration requirements.
+
+---
+
 ## Okta OBO (On-Behalf-Of) Explained for an Enterprise MCP Gateway
 
 This document explains **On-Behalf-Of (OBO)** token exchange in the specific context of:
@@ -81,6 +88,12 @@ sequenceDiagram
     G-->>A: Response (masked) + audit log emitted
 ```
 
+> **Note**: This sequence diagram shows the flow when OBO is configured and enabled for the target server. Steps 7-8 (token exchange with Okta) only occur when:
+> - Environment variables `OKTA_TOKEN_ENDPOINT`, `OKTA_CLIENT_ID`, and `OKTA_CLIENT_SECRET` are set
+> - The target server has `token_exchange: true` and `target_audience` configured in the policy file
+>
+> When OBO is not configured or not enabled for a server, steps 7-8 are skipped and **no Authorization header** is sent to the downstream MCP server (the gateway calls it without authentication).
+
 ---
 
 ## 4.5) Transport Applicability
@@ -121,6 +134,8 @@ Governance and audit attribution are maintained regardless of transport. OBO sol
 - If the stdio server needs to call downstream HTTP APIs, the gateway can inject delegated credentials via environment or configuration
 
 Practical enterprise default: **prefer exchange** for HTTP downstream calls; **rely on gateway process context** for stdio servers.
+
+> **Current Limitation**: When OBO is not configured (missing environment variables) or not enabled for a specific server (policy file settings), the gateway does not forward any authorization token to that server. This means the downstream server receives requests without authentication. For production use, configure OBO for all HTTP-based MCP servers that require user authentication.
 
 ---
 
@@ -186,18 +201,54 @@ OBO is **delegated authorization**, not impersonation.
 
 ---
 
-## 8) Okta-Specific Implementation Notes (Conceptual)
+## 8) Okta-Specific Implementation and Configuration
 
-To support OBO in Okta, you typically need:
+### Okta Prerequisites
+
+To support OBO in Okta, you need:
 - A **Custom Authorization Server** (API Access Management)
 - Token exchange enabled/allowed for the gateway client
 - Audience and scope design per MCP server
 - Group claims configured (if governance relies on groups)
 
-Your gateway should treat Okta as the token issuer and be able to:
-- validate incoming access tokens (JWT validation)
-- exchange tokens for downstream audiences
-- cache exchange results safely (short TTL)
+### Gateway Configuration
+
+The gateway implements OBO via three required environment variables:
+
+| Environment Variable | Description | Example |
+|---------------------|-------------|---------|
+| `OKTA_TOKEN_ENDPOINT` | OAuth2 token endpoint for token exchange | `https://your-tenant.okta.com/oauth2/default/v1/token` |
+| `OKTA_CLIENT_ID` | Gateway's OAuth2 client ID | `0oa1b2c3d4e5f6g7h8i9` |
+| `OKTA_CLIENT_SECRET` | Gateway's OAuth2 client secret | `secret-value-here` |
+
+> **Note**: All three environment variables must be set for OBO to be enabled. If any are missing, the gateway will not perform token exchange, and no authorization tokens will be forwarded to downstream servers.
+
+### Per-Server Policy Configuration
+
+Each MCP server in your policy file must be configured with OBO settings:
+
+```yaml
+servers:
+  - name: github-mcp
+    url: https://github-mcp.internal.example.com
+    transport: http
+    token_exchange: true              # Enable OBO for this server
+    target_audience: github-mcp       # Audience for exchanged token
+    required_scopes:                  # Scopes to request
+      - read:repos
+      - read:issues
+```
+
+**Configuration fields:**
+- `token_exchange` (boolean): Enable OBO token exchange for this server
+- `target_audience` (string, required when `token_exchange: true`): The audience claim for the exchanged token
+- `required_scopes` (list of strings, optional): Scopes to request in the exchanged token
+
+The gateway:
+- Validates incoming access tokens (JWT validation via `IdentityHook`)
+- Exchanges tokens for downstream audiences (via `OBOClient` implementing RFC 8693)
+- Caches exchange results safely (short TTL, configurable via `OBOConfig.cache_ttl`, default 300s)
+- Logs exchange failures and denies requests that cannot be authenticated
 
 ---
 
@@ -217,17 +268,51 @@ Your gateway should treat Okta as the token issuer and be able to:
 
 ---
 
-## 10) Practical Guidance for Your MCP Gateway MVP
+## 10) Practical Guidance for Production Deployment
 
-MVP recommendation:
-- Implement exchange as a pluggable module
-- Support per-server configuration:
-  - forward vs exchange
-  - target audience
-  - required scopes
-- Log both:
-  - upstream user token subject
-  - downstream audience/scope
+### Implementation Status
+
+The gateway implements OBO as a pluggable module (`OBOAuthProvider`) with:
+- Per-server configuration via policy file (`token_exchange`, `target_audience`, `required_scopes`)
+- RFC 8693 compliant token exchange via `OBOClient`
+- Token caching with configurable TTL to minimize exchange overhead
+- Comprehensive logging of upstream user token subject and downstream audience/scope
+
+### Deployment Checklist
+
+1. **Configure Okta**:
+   - Set up Custom Authorization Server
+   - Create gateway client with token exchange permissions
+   - Define audiences for each downstream MCP server
+   - Configure scopes per server requirements
+
+2. **Set environment variables**:
+   ```bash
+   export OKTA_TOKEN_ENDPOINT=https://your-tenant.okta.com/oauth2/default/v1/token
+   export OKTA_CLIENT_ID=your-client-id
+   export OKTA_CLIENT_SECRET=your-client-secret
+   ```
+
+3. **Configure policy file** with per-server OBO settings:
+   ```yaml
+   servers:
+     - name: your-server
+       token_exchange: true
+       target_audience: your-server-audience
+       required_scopes: [scope1, scope2]
+   ```
+
+4. **Monitor logs** for:
+   - Token exchange failures (`TokenExchangeError`)
+   - Unauthorized access attempts
+   - OBO cache hit/miss patterns
+
+### Production Considerations
+
+- All HTTP-based MCP servers should have `token_exchange: true` in production
+- Servers without OBO configuration will receive unauthenticated requests
+- Token exchange failures result in request denial (fail-closed security model)
+- Cache TTL (default 300s) should be tuned based on your security requirements
 
 ---
 

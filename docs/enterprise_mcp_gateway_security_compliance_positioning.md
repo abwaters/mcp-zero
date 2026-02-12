@@ -30,10 +30,25 @@ This document defines the security and compliance posture of the Enterprise MCP 
 ---
 
 ### Enforcement Model
-- **Gateway-proxied HTTP**: hard enforcement — full governance, OBO, masking, auditing
-- **Gateway-managed stdio**: hard enforcement — governance, masking, and auditing apply identically to spawned MCP server processes
-- **Local developer stdio** (outside gateway): observability-only — monitored through complementary controls
+- **Gateway-proxied traffic** (HTTP or stdio): hard enforcement — governance, masking, and auditing apply to all tool calls
+- **On-Behalf-Of (OBO) token exchange**: available for HTTP servers when explicitly configured per-server in policy
+- **Local developer usage** (outside gateway): observability-only — monitored through complementary controls
 - No endpoint or device control claims
+
+### Scope and Limitations
+
+**Full Enforcement Pipeline Applies To:**
+- All tool calls (tools/call) routed through the gateway, regardless of transport (HTTP or stdio)
+- Governance policy evaluation (allow/deny)
+- Data masking (PII and secrets via Presidio)
+- Structured audit logging with user attribution
+
+**Current Implementation Limitations:**
+1. **Tool Discovery Bypass**: The tool listing endpoint (tools/list) does not run through the governance pipeline and cannot enforce per-user authorization rules
+2. **OBO Token Exchange**: Requires explicit per-server configuration in policy files; not automatic
+3. **stdio Transport Constraints**:
+   - OBO token exchange is not applicable to stdio servers (process-local execution model)
+   - stdio servers spawned by the gateway inherit the gateway's execution context rather than receiving downstream tokens
 
 ---
 
@@ -45,10 +60,11 @@ This document defines the security and compliance posture of the Enterprise MCP 
 ---
 
 ### Explicit Non-Claims
-- Does not prevent all local MCP usage
-- Does not enforce governance on stdio transport outside the gateway (e.g., local developer MCP clients connecting directly to stdio servers)
-- Does not provide DLP guarantees beyond masking
+- Does not prevent all local MCP usage outside the gateway
+- Does not enforce governance on direct client-to-server connections that bypass the gateway
+- Does not provide DLP guarantees beyond inline masking
 - Does not classify tool risk or intent
+- Does not enforce authorization on tool listing (tools/list) — only on tool execution (tools/call)
 
 ---
 

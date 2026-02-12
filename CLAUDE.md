@@ -55,14 +55,20 @@ CI will reject PRs that fail `ruff format --check`. Do not skip this step.
 - **uvx-compatible** — has `[project.scripts]` entry point; keep all runtime deps in `dependencies` (not optional)
 - Dev-only tools (pytest, ruff) go in `[project.optional-dependencies] dev`
 
-## Planned Architecture (from docs/)
+## Important Implementation Notes
+
+- **Fail-closed by default**: Gateway refuses to start without `MCP_POLICY_FILE` unless `MCP_ALLOW_INSECURE=true` is set
+- **OBO status**: OBO token exchange infrastructure exists in code but is not invoked in the request flow
+- **Presidio**: Masking is hardcoded to Presidio, not yet plugin-based (plugin architecture is planned)
+
+## Architecture
 
 The gateway sits between enterprise AI tools and MCP servers:
 
-- **Identity**: Okta OAuth2 with OBO (on-behalf-of) token exchange for downstream MCP servers
-- **Governance**: Static YAML/JSON policy files, default-deny, server/tool/user-level controls
-- **Data protection**: Inline Presidio masking for PII and secrets on inputs and outputs
+- **Identity**: Okta OAuth2 JWT validation (OBO token exchange infrastructure exists but not yet invoked in request flow)
+- **Governance**: Static YAML/JSON policy files, default-deny, server/tool/user/group-level controls
+- **Data protection**: Inline Presidio masking (hardcoded, not plugin-based yet) for PII and secrets on inputs and outputs
 - **Auditing**: Structured logs with user attribution, correlation IDs, policy decisions
-- **Transports**: Streamable HTTP (primary enforcement path with OBO) and stdio (gateway-spawned servers, no OBO needed)
+- **Transports**: Streamable HTTP and stdio (both enforce full pipeline when configured)
 
-Key constraint: local developer stdio usage outside the gateway is observability-only (no endpoint control).
+Both HTTP and stdio transports enforce governance, masking, and auditing through the same unified pipeline when configured.

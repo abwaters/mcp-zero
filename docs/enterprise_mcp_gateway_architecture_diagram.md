@@ -42,6 +42,8 @@ stdio]
     GW --> Logs
 ```
 
+**Note**: Both HTTP and stdio connections flow through the full Identity → Governance → Masking → Audit pipeline when the gateway's security controls are configured.
+
 ---
 
 ## Component Responsibilities
@@ -95,8 +97,7 @@ The gateway supports two MCP transport modes:
 ### stdio (Gateway-Managed Servers)
 - Gateway spawns MCP server processes locally and communicates via stdin/stdout
 - Server runs as a subprocess of the gateway — no network boundary between gateway and server
-- User identity is propagated via the gateway's process context
-- Governance, masking, and auditing apply identically to HTTP-connected servers
+- Governance, masking, and auditing apply through the same unified pipeline as HTTP connections
 
 ---
 
@@ -104,6 +105,11 @@ The gateway supports two MCP transport modes:
 - OAuth2 token trust boundary at gateway ingress
 - Enterprise boundary enforced before external MCP servers
 - Sensitive data never leaves boundary unmasked
+
+**Enforcement Boundaries**:
+- HTTP transport: Full enforcement at gateway (identity, governance, masking, audit)
+- stdio transport: Full enforcement at gateway (identity, governance, masking, audit)
+- Trust boundary enforcement applies to both HTTP and stdio transports through the unified pipeline
 
 ---
 

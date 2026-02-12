@@ -1,5 +1,9 @@
 # Analytics Redis Integration — Implementation Plan
 
+> **STATUS**: This document describes a planned feature that is **NOT YET IMPLEMENTED**.
+> The analytics infrastructure described here does not exist in the current codebase.
+> This is a design specification for future implementation.
+
 ## Overview
 
 Add an optional analytics subsystem to the MCP gateway that publishes real-time

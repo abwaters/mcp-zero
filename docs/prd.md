@@ -39,7 +39,7 @@ The gateway provides hard enforcement for hosted enterprise AI tools and observa
 #### Identity & Authentication
 - Okta integration
 - OAuth2 Authorization Code flow (primary)
-- Gateway acts on behalf of the user
+- Gateway validates user identity via JWT (on-behalf-of token exchange infrastructure in development)
 
 #### Governance
 - Static YAML/JSON policy configuration
@@ -67,7 +67,7 @@ The gateway provides hard enforcement for hosted enterprise AI tools and observa
 
 #### Transport & Enforcement Model
 - **HTTP / Streamable HTTP**: primary enforcement path — full governance, OBO token exchange, data masking, and auditing
-- **stdio (gateway-managed)**: supported for gateway-spawned MCP server processes — governed and audited when invoked through hosted enterprise AI tools
+- **stdio (gateway-managed)**: supported for gateway-spawned MCP server processes — governance, masking, and auditing enforced through the same pipeline as HTTP
 - **Local developer stdio**: observability-only — local stdio-based MCP usage outside the gateway is not enforced; monitored through complementary controls
 
 ---
@@ -101,8 +101,30 @@ And logs the action with policy decision "deny"
 
 ---
 
-### Success Metrics  
+### Success Metrics
 - MCP adoption in enterprise AI tools
 - 100% audited MCP traffic
 - Zero unmasked sensitive data in logs
+
+---
+
+## Implementation Status
+
+### Implemented (MVP)
+- ✅ Okta JWT validation
+- ✅ YAML/JSON policy configuration
+- ✅ Policy evaluation (allow/deny by server, tool, user, group)
+- ✅ Presidio masking on HTTP requests (inputs and outputs)
+- ✅ Structured audit logging
+- ✅ HTTP transport with full pipeline enforcement
+- ✅ stdio transport with full enforcement (verified via integration tests)
+
+### Partially Implemented
+- ⚠️ OBO token exchange (infrastructure exists, not invoked in request flow)
+
+### Planned / Not Implemented
+- ❌ Plugin architecture
+- ❌ Analytics/Redis integration
+- ❌ Policy authoring UI
+- ❌ Dynamic policy reloading
 

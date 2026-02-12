@@ -33,7 +33,7 @@
 - `agentgateway` can model more advanced scenarios but with higher operational/policy complexity.
 
 ### 2) Identity and authorization model
-- **mcp-zero:** opinionated around gateway-edge JWT validation and enterprise claims mapping, with OBO support for downstream MCP servers.
+- **mcp-zero:** opinionated around gateway-edge JWT validation and enterprise claims mapping, with optional OBO support for downstream MCP servers (requires OKTA_TOKEN_ENDPOINT + per-server config).[^1]
 - **agentgateway:** emphasizes RBAC and policy-driven security in a broader connectivity model.
 
 **Where each excels**
@@ -41,7 +41,7 @@
 - `agentgateway`: platform teams that need broader authorization composition across many tenants/environments.
 
 ### 3) Data protection and content controls
-- **mcp-zero:** first-class Presidio masking pipeline for PII/secrets (very explicit and practical for compliance narratives).
+- **mcp-zero:** first-class Presidio masking pipeline for PII/secrets on HTTP traffic (very explicit and practical for compliance narratives; stdio connections bypass masking).[^2]
 - **agentgateway:** stronger generalized transformation/policy capability, but not as singularly centered on Presidio-style masking defaults.
 
 ### 4) Operational model
@@ -88,6 +88,14 @@
 ## Known limitations and caveats
 - This comparison focuses on publicly documented features and architectural posture, not benchmarked throughput numbers.
 - Both projects move quickly; re-check current release docs before final platform commitment.
+
+---
+
+## Implementation Notes
+
+[^1]: **OBO token exchange configuration**: OBO token exchange is implemented but requires explicit configuration: (1) set `OKTA_TOKEN_ENDPOINT`, `OKTA_CLIENT_ID`, and `OKTA_CLIENT_SECRET` environment variables, and (2) enable OBO per-server in the policy file with `obo.enabled: true`, `obo.target_audience`, and `obo.scopes`.
+
+[^2]: **stdio transport limitation**: mcp-zero supports stdio connections for gateway-spawned MCP server processes, but governance policy evaluation and Presidio masking are **only enforced on HTTP/Streamable HTTP** traffic. stdio connections bypass the governance and masking pipeline.
 
 ---
 
