@@ -1,11 +1,11 @@
 ## What This Is
 The Enterprise MCP Gateway is a control point that allows MCP to be used safely in regulated enterprise environments. It supports both HTTP and stdio MCP transports, covering remote MCP servers as well as gateway-managed server processes.
 
-It enables AI tools to use MCP while ensuring:
-- Only approved tools are accessible
-- Actions are attributable to real users
-- Sensitive data is masked
-- All activity is auditable
+For tool calls routed through the gateway, it provides:
+- Governance policies that control which tools can be invoked
+- User attribution on all actions
+- Inline masking of sensitive data (PII and secrets)
+- Comprehensive audit logging
 
 ---
 
@@ -22,10 +22,18 @@ Without a gateway, MCP adoption is blocked by security and compliance concerns. 
 ---
 
 ## Enforcement Reality
-- Hosted enterprise AI tools (HTTP or stdio through gateway): **enforced**
-- Local developer tools (direct stdio outside gateway): **monitored**
+- Tool calls routed through the gateway (HTTP or stdio): **full enforcement**
+- Tool discovery requests (tools/list): **no per-user authorization**
+- Local developer tools (bypassing gateway): **observability-only**
 
-This applies regardless of transport — when traffic flows through the gateway (HTTP or stdio), governance is enforced. Local developer MCP usage outside the gateway remains observability-only, reflecting technical reality and avoiding false security claims.
+When tool calls flow through the gateway, governance policies, data masking, and audit logging apply regardless of transport. Tool listing shows the same catalog to all authenticated users. Local developer MCP usage outside the gateway cannot be controlled by the gateway.
+
+---
+
+## Current Limitations
+1. **Tool Discovery**: The tools/list endpoint does not enforce per-user authorization rules — all users see the same tool catalog
+2. **OBO Token Exchange**: Available for HTTP servers but requires explicit per-server configuration in policy files
+3. **stdio Transport**: Does not support OBO token exchange (process-local execution model)
 
 ---
 

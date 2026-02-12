@@ -30,78 +30,72 @@ Perform a deep code review of the MCP gateway implementation from three angles:
 
 ## Executive summary
 
+**UPDATE 2026-02-12**: The two critical cross-user security boundary issues have been **RESOLVED** through fixes merged in January 2026:
+- ✅ F-01: Fixed in PR #50 and #78 — sessions now isolated per `(server_name, subject_id)`
+- ✅ F-02: Fixed in PR #51 and #77 — OBO cache now uses validated `subject_id` from JWT claims
+
 The codebase has strong foundations: JWT signature validation via JWKS, fail-closed governance evaluation once enabled, HTTPS validation helpers, and output-masking fail-closed behavior.
 
-However, there are **two critical issues** that can cause cross-user security boundary failures:
-
-1. **Critical:** downstream HTTP sessions are cached per server, not per identity/token context.
-2. **Critical:** OBO token cache key can collapse across users when inbound JWT `jti` is missing.
-
-There are also high/medium risks related to secure defaults, information disclosure, and operational resilience.
+**Remaining issues** (high/medium severity) relate to:
+1. Secure defaults and fail-open configuration fallbacks (F-03, F-04)
+2. Information disclosure via tool listing and error responses (F-05, F-06)
+3. Operational resilience (F-07 — partially resolved with bounded retention)
 
 ## Findings matrix
 
-| ID | Severity | Category | Title |
-|---|---|---|---|
-| F-01 | Critical | Security / Functional | Cross-user auth context reuse in cached downstream HTTP session |
-| F-02 | Critical | Security | OBO cache key collision when `jti` is absent |
-| F-03 | High | Security / Compliance | Secure controls can be silently disabled by startup config gaps |
-| F-04 | High | Security / Functional | OBO-enabled route can degrade to unauthenticated upstream call |
-| F-05 | Medium | Security | Client-visible token exchange errors may leak IdP/internal detail |
-| F-06 | Medium | Security / Compliance | Tool inventory can be listed without authz guard |
-| F-07 | Medium | Availability / Compliance | Unbounded in-memory audit event retention |
-| F-08 | Informational | Security | HTTPS guardrails are present and materially improve posture |
+| ID | Severity | Category | Title | Status |
+|---|---|---|---|---|
+| F-01 | ~~Critical~~ | Security / Functional | Cross-user auth context reuse in cached downstream HTTP session | ✅ **RESOLVED** (PR #50, #78) |
+| F-02 | ~~Critical~~ | Security | OBO cache key collision when `jti` is absent | ✅ **RESOLVED** (PR #51, #77) |
+| F-03 | High | Security / Compliance | Secure controls can be silently disabled by startup config gaps | ⚠️ **OPEN** |
+| F-04 | High | Security / Functional | OBO-enabled route can degrade to unauthenticated upstream call | ⚠️ **OPEN** |
+| F-05 | ~~Medium~~ | Security | Client-visible token exchange errors may leak IdP/internal detail | ✅ **RESOLVED** (PR #54, #79) |
+| F-06 | Medium | Security / Compliance | Tool inventory can be listed without authz guard | ⚠️ **OPEN** |
+| F-07 | ~~Medium~~ | Availability / Compliance | Unbounded in-memory audit event retention | ✅ **RESOLVED** (PR #55, #80) |
+| F-08 | Informational | Security | HTTPS guardrails are present and materially improve posture | ✅ **CONFIRMED** |
 
 ---
 
 ## Detailed findings
 
-### F-01 (Critical): Cross-user auth context reuse in cached downstream HTTP session
+### F-01 (Critical): Cross-user auth context reuse in cached downstream HTTP session ✅ RESOLVED
 
-**What happens**
+**Status**: ✅ **RESOLVED** in PR #50 and #78 (January 2026)
 
-- `ServerManager` stores exactly one transport per configured server.
-- `get_session()` only calls `transport.connect(...)` if the transport is not already connected.
-- `StreamableHTTPTransport.connect()` binds Authorization and correlation headers when creating the underlying `httpx.AsyncClient`.
-- Later requests to the same server reuse the already-connected session and its client headers.
+**What happened (original finding)**
 
-**Impact**
+- `ServerManager` stored exactly one transport per configured server.
+- `get_session()` only called `transport.connect(...)` if the transport was not already connected.
+- `StreamableHTTPTransport.connect()` bound Authorization and correlation headers when creating the underlying `httpx.AsyncClient`.
+- Later requests to the same server reused the already-connected session and its client headers.
 
-In a shared gateway process, the first requester/token to establish the upstream HTTP session can set effective auth headers for subsequent users. This is a high-risk multi-tenant isolation break and can cause authorization confusion.
+**Impact (original)**
 
-**Likelihood**
+In a shared gateway process, the first requester/token to establish the upstream HTTP session could set effective auth headers for subsequent users. This was a high-risk multi-tenant isolation break that could cause authorization confusion.
 
-High in long-lived gateways with concurrent users.
+**Resolution**
 
-**Recommended remediation**
-
-- Prefer **per-request auth propagation** to upstream calls (no sticky bearer at transport connect time), or
-- Maintain session pools keyed by strong subject context (`iss/sub/token thumbprint`) and rotate on token change.
-- Add regression tests that assert user A and user B do not share upstream Authorization context.
+`ServerManager` now maintains transport pools keyed by `(server_name, subject_id)` tuple (see `_SessionKey` dataclass). Each authenticated user gets an isolated transport with their own auth context. The `get_session()` method extracts `subject_id` from `context.identity.user_id` and creates per-user transports. Unauthenticated requests (no identity) share a single transport per server.
 
 ---
 
-### F-02 (Critical): OBO cache key collision when `jti` is absent
+### F-02 (Critical): OBO cache key collision when `jti` is absent ✅ RESOLVED
 
-**What happens**
+**Status**: ✅ **RESOLVED** in PR #51 and #77 (January 2026)
 
-- `OBOAuthProvider` extracts `jti` from raw token without verification and returns empty string when absent/invalid.
-- `OBOClient.ExchangeCacheKey` is derived from `(subject_jti, audience, scopes)`.
-- Multiple distinct users with tokens lacking `jti` map to identical cache keys for same audience/scopes.
+**What happened (original finding)**
 
-**Impact**
+- `OBOAuthProvider` extracted `jti` from raw token without verification and returned empty string when absent/invalid.
+- `OBOClient.ExchangeCacheKey` was derived from `(subject_jti, audience, scopes)`.
+- Multiple distinct users with tokens lacking `jti` mapped to identical cache keys for same audience/scopes.
 
-Cross-user token reuse: one user can receive another user’s exchanged token from cache.
+**Impact (original)**
 
-**Likelihood**
+Cross-user token reuse: one user could receive another user's exchanged token from cache.
 
-Moderate to high, depending on IdP token profile (some providers omit `jti`).
+**Resolution**
 
-**Recommended remediation**
-
-- Require and enforce `jti` for OBO flows, failing closed if absent, **or**
-- Build cache key from validated identity tuple (e.g., `iss + sub + aud + sorted(scopes)`), not unverified token parsing.
-- Add tests for no-`jti` tokens to verify per-user isolation.
+`ExchangeCacheKey` now uses validated `subject_id` (the `sub` claim from the JWT after validation) instead of `jti`. The cache key is now `(subject_id, target_audience, scopes)` tuple. The `OBOClient.exchange_token()` method accepts `subject_id` as a parameter extracted from validated identity context, preventing cache collisions even when tokens lack `jti` claims. See GitHub issue #51 for full discussion.
 
 ---
 
@@ -144,21 +138,22 @@ Policy intent (“server requires token exchange”) may not be enforced at runt
 
 ---
 
-### F-05 (Medium): Client-visible token exchange errors may leak internals
+### F-05 (Medium): Client-visible token exchange errors may leak internals ✅ RESOLVED
 
-**What happens**
+**Status**: ✅ **RESOLVED** in PR #54 and #79 (January 2026)
 
-- `ProxyServer` returns token exchange failures to client including exception string.
-- `TokenExchangeError` may include HTTP status/body from IdP response.
+**What happened (original finding)**
 
-**Impact**
+- `ProxyServer` returned token exchange failures to client including exception string.
+- `TokenExchangeError` could include HTTP status/body from IdP response.
+
+**Impact (original)**
 
 Potential disclosure of provider-side diagnostics and internal integration details to untrusted callers.
 
-**Recommended remediation**
+**Resolution**
 
-- Return generic client error text.
-- Keep detailed diagnostics in structured logs only, keyed by correlation ID.
+Token exchange errors now return a generic "Access denied" message to the client with only the correlation ID for tracking. The full exception details (HTTP status, IdP response body, etc.) are logged server-side using `logger.warning()` with `exc_info=True`, keyed by correlation ID. See `proxy_server.py` lines 137-150.
 
 ---
 
@@ -180,20 +175,21 @@ Metadata disclosure (tool names/descriptions) to unauthenticated/unauthorized ca
 
 ---
 
-### F-07 (Medium): Unbounded in-memory audit event retention
+### F-07 (Medium): Unbounded in-memory audit event retention ✅ RESOLVED
 
-**What happens**
+**Status**: ✅ **RESOLVED** in PR #55 and #80 (January 2026)
 
-- `AuditHook` appends each event into `self._events` without bounds.
+**What happened (original finding)**
 
-**Impact**
+- `AuditHook` appended each event into `self._events` without bounds.
 
-Long-running process can accumulate memory indefinitely (availability risk). Also raises data retention concerns if in-memory event history is not controlled.
+**Impact (original)**
 
-**Recommended remediation**
+Long-running process could accumulate memory indefinitely (availability risk). Also raised data retention concerns if in-memory event history was not controlled.
 
-- Use bounded ring buffer (debug/test only), or
-- Disable in-memory retention in production and stream only to sink/logger.
+**Resolution**
+
+`AuditHook` now supports configurable retention limits. The hook maintains a bounded event list with a configurable maximum size (defaults to retain recent events for testing/debugging while preventing unbounded growth). When the limit is reached, oldest events are discarded. Production deployments can disable in-memory retention entirely by setting the limit to 0, relying solely on structured log output.
 
 ---
 
@@ -231,11 +227,23 @@ Long-running process can accumulate memory indefinitely (availability risk). Als
 
 ## Prioritized remediation plan
 
-1. **Immediate (P0):** Fix F-01 and F-02 before production rollout.
-2. **Near-term (P1):** Enforce strict startup posture and fail-closed OBO preconditions (F-03, F-04).
-3. **Near-term (P1):** Harden external error responses and tool-list authorization (F-05, F-06).
-4. **Short-term (P2):** Bound audit memory retention and document retention controls (F-07).
-5. **Ongoing:** Monitor any use of insecure mode and alert on non-dev environments.
+### ✅ Completed (January 2026)
+1. ~~**Immediate (P0):** Fix F-01 and F-02 before production rollout.~~ ✅ **COMPLETED** (PR #50, #51, #77, #78)
+2. ~~**Near-term (P1):** Harden external error responses (F-05).~~ ✅ **COMPLETED** (PR #54, #79)
+3. ~~**Short-term (P2):** Bound audit memory retention (F-07).~~ ✅ **COMPLETED** (PR #55, #80)
+
+### ⚠️ Remaining Work (February 2026)
+1. **High Priority (P1):** Enforce strict startup posture and fail-closed OBO preconditions (F-03, F-04).
+   - Add strict security mode that refuses startup when identity/governance are incomplete
+   - Emit clear startup logs indicating security posture (authenticated/unauthenticated mode)
+   - Require explicit opt-in for legacy/insecure mode
+
+2. **Medium Priority (P1):** Implement tool-list authorization (F-06).
+   - Apply identity/governance pipeline to `list_tools` method
+   - Filter returned tools by policy decision for the requester
+   - Consider separate `list_tools` capability in policy schema
+
+3. **Ongoing:** Monitor any use of insecure mode and alert on non-dev environments.
 
 ## Suggested validation tests after fixes
 

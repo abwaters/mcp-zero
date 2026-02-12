@@ -38,11 +38,11 @@
 - If session affinity and dynamic tool routing at scale are core requirements, Microsoft’s model is a stronger native fit.
 
 ### 3) Governance vs platform control plane emphasis
-- **mcp-zero:** governance semantics are central product identity.
+- **mcp-zero:** governance semantics are central product identity (enforced on HTTP traffic; stdio connections bypass governance/masking).[^1]
 - **Microsoft MCP Gateway:** platform operations and MCP server lifecycle management are central.
 
 **Trade-off**
-- `mcp-zero` may be simpler to adopt for policy-first governance.
+- `mcp-zero` may be simpler to adopt for policy-first governance on HTTP traffic.
 - Microsoft MCP Gateway may be superior where centralized runtime orchestration is mandatory.
 
 ---
@@ -71,7 +71,7 @@
 ## Recommended use-cases
 
 ### Prefer mcp-zero when
-1. You want governance-first MCP control with explicit deny/allow policy semantics.
+1. You want governance-first MCP control with explicit deny/allow policy semantics (enforced on HTTP traffic).
 2. You need to explain security controls quickly to compliance stakeholders.
 3. You prefer a lightweight service architecture.
 
@@ -85,6 +85,12 @@
 ## Known limitations and caveats
 - Architectural complexity and team operating model should drive the decision as much as feature checklists.
 - Re-verify latest API and deployment docs before implementation planning.
+
+---
+
+## Implementation Notes
+
+[^1]: **stdio transport limitation**: mcp-zero supports stdio connections for gateway-spawned MCP server processes, but governance policy evaluation and Presidio masking are **only enforced on HTTP/Streamable HTTP** traffic. stdio connections bypass the governance and masking pipeline.
 
 ---
 

@@ -35,8 +35,8 @@ This environment could not directly retrieve `https://www.mintmcp.com/` due netw
 - `MintMCP`: teams optimizing for speed-to-value and reduced operational burden.
 
 ### 2) Security and compliance posture
-- **mcp-zero:** built-in policy enforcement, identity mapping, masking, and audit hooks are explicit in product architecture.
-- **MintMCP:** public repos indicate security-focused components and hosted orchestration context, but governance semantics equivalent to mcp-zero’s deny/allow policy engine are not the primary public framing.
+- **mcp-zero:** built-in policy enforcement (HTTP only)[^1], identity mapping with optional OBO token exchange[^2], Presidio masking (HTTP only)[^1], and structured audit hooks.
+- **MintMCP:** public repos indicate security-focused components and hosted orchestration context, but governance semantics equivalent to mcp-zero's deny/allow policy engine are not the primary public framing.
 
 **Trade-off**
 - If your compliance process requires self-operated control-plane logic with deterministic authorization semantics, `mcp-zero` is usually the better fit.
@@ -76,8 +76,8 @@ This environment could not directly retrieve `https://www.mintmcp.com/` due netw
 ## Recommended use-cases
 
 ### Prefer mcp-zero when
-1. You need enterprise-controlled governance policy with explicit authorization logic.
-2. You need to enforce masking/audit controls in your own trusted boundary.
+1. You need enterprise-controlled governance policy with explicit authorization logic (enforced on HTTP traffic).
+2. You need to enforce masking/audit controls in your own trusted boundary (HTTP only; stdio bypasses enforcement).[^1]
 3. You need a gateway framework you can tailor deeply in Python.
 
 ### Prefer MintMCP when
@@ -90,6 +90,14 @@ This environment could not directly retrieve `https://www.mintmcp.com/` due netw
 ## Known limitations and caveats
 - Because the primary MintMCP website was inaccessible from this runtime, treat this as a best-effort comparison grounded in public GitHub artifacts rather than full product documentation.
 - Re-validate current hosting, SLA, compliance, and licensing terms directly with vendor docs before final decisions.
+
+---
+
+## Implementation Notes
+
+[^1]: **stdio transport limitation**: mcp-zero supports stdio connections for gateway-spawned MCP server processes, but governance policy evaluation and Presidio masking are **only enforced on HTTP/Streamable HTTP** traffic. stdio connections bypass the governance and masking pipeline.
+
+[^2]: **OBO token exchange configuration**: OBO token exchange is implemented but requires explicit configuration: (1) set `OKTA_TOKEN_ENDPOINT`, `OKTA_CLIENT_ID`, and `OKTA_CLIENT_SECRET` environment variables, and (2) enable OBO per-server in the policy file with `obo.enabled: true`, `obo.target_audience`, and `obo.scopes`.
 
 ---
 

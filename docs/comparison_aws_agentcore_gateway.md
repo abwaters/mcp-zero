@@ -32,12 +32,12 @@
 - `AWS AgentCore Gateway`: organizations already invested in AWS seeking managed infrastructure with zero-code tool creation from APIs, Lambda functions, and Smithy models.
 
 ### 2) Identity and authentication
-- **mcp-zero:** Okta OAuth2 with on-behalf-of (OBO) token exchange for downstream MCP servers; identity claims mapped through the gateway.
+- **mcp-zero:** Okta OAuth2 JWT validation with optional on-behalf-of (OBO) token exchange for downstream MCP servers (requires OKTA_TOKEN_ENDPOINT + per-server policy config)[^1]; identity claims mapped through the gateway.
 - **AWS AgentCore Gateway:** dual-sided authentication model — inbound via OAuth (MCP spec-compliant), JWT, or IAM; outbound via IAM roles, API keys, or OAuth client credentials. Dedicated AgentCore Identity service provides agent-specific credential vaults with KMS encryption.
 
 **Trade-off**
 - AgentCore Gateway's identity model is broader and deeper within AWS, but couples you to AWS IAM and services.
-- `mcp-zero`'s OBO model is simpler and provider-agnostic, fitting cleanly into existing enterprise IdP setups.
+- `mcp-zero`'s OBO model (when configured) is simpler and provider-agnostic, fitting cleanly into existing enterprise IdP setups.
 
 ### 3) Authorization and policy
 - **mcp-zero:** deterministic deny-by-default policy engine with ordered allow/deny rules in static YAML/JSON files scoped to user, group, server, and tool.
@@ -48,11 +48,11 @@
 - AgentCore Policy is more expressive (Cedar) and offers advanced features like NL-to-policy generation, but adds AWS service dependency and Cedar learning curve.
 
 ### 4) Data protection and masking
-- **mcp-zero:** built-in inline Presidio masking for PII and secrets on both request inputs and response outputs, operating within the gateway data path.
+- **mcp-zero:** built-in inline Presidio masking for PII and secrets on both request inputs and response outputs within the HTTP gateway data path (stdio connections bypass masking).[^2]
 - **AWS AgentCore Gateway:** PII masking is handled at the observability layer (CloudWatch data protection policies) rather than inline in the MCP data path. Content filtering is available separately via Bedrock Guardrails.
 
 **Implication**
-- `mcp-zero` masks data in-flight before it reaches downstream MCP servers, which is often required in regulated environments.
+- `mcp-zero` masks data in-flight on HTTP traffic before it reaches downstream MCP servers, which is often required in regulated environments.
 - AgentCore Gateway's masking operates on logs after the fact; inline content filtering requires configuring Bedrock Guardrails as a separate service.
 
 ### 5) Auditing and observability
@@ -101,7 +101,7 @@
 
 ### Prefer mcp-zero when
 1. You need a cloud-agnostic, self-hosted MCP gateway without vendor lock-in.
-2. You require inline PII/secret masking in the MCP data path (not just in logs).
+2. You require inline PII/secret masking in the HTTP data path (not just in logs; note: stdio bypasses masking).[^2]
 3. You want simple, file-based policy artifacts that compliance teams can directly review.
 4. You need lightweight deployment without consumption-based pricing.
 
@@ -117,6 +117,14 @@
 - AgentCore Gateway is a rapidly evolving AWS service; features like AgentCore Policy are still in preview as of early 2026.
 - Cost comparisons depend heavily on request volume and the number of AgentCore sub-services consumed.
 - Re-verify current AWS documentation and pricing before implementation planning.
+
+---
+
+## Implementation Notes
+
+[^1]: **OBO token exchange configuration**: OBO token exchange is implemented but requires explicit configuration: (1) set `OKTA_TOKEN_ENDPOINT`, `OKTA_CLIENT_ID`, and `OKTA_CLIENT_SECRET` environment variables, and (2) enable OBO per-server in the policy file with `obo.enabled: true`, `obo.target_audience`, and `obo.scopes`.
+
+[^2]: **stdio transport limitation**: mcp-zero supports stdio connections for gateway-spawned MCP server processes, but governance policy evaluation and Presidio masking are **only enforced on HTTP/Streamable HTTP** traffic. stdio connections bypass the governance and masking pipeline.
 
 ---
 

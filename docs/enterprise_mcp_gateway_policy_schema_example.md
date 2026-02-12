@@ -9,10 +9,8 @@ default: deny
 
 identity:
   provider: okta
-  claim_mapping:
-    user_id: sub
-    email: email
-    groups: groups
+  issuer: https://your-org.okta.com/oauth2/default
+  audience: mcp-gateway
 
 # Server connection registry — declares how the gateway reaches each MCP server
 servers:
@@ -22,13 +20,6 @@ servers:
   - name: github-mcp
     transport: http
     url: https://github-mcp.internal.corp/mcp
-  - name: audit-mcp
-    transport: stdio
-    command: /usr/local/bin/audit-mcp-server
-    args: ["--config", "/etc/audit-mcp/config.yaml"]
-  - name: local-tools-mcp
-    transport: stdio
-    command: /usr/local/bin/local-tools-server
 
 policies:
   - id: allow-platform-ops-internal-tools
@@ -70,45 +61,13 @@ policies:
           - delete_*
           - write_*
 
-  - id: allow-security-audit
-    description: Allow Security team to run audit tools
-    effect: allow
-    subjects:
-      groups:
-        - security
-        - compliance
-    mcp_servers:
-      - name: audit-mcp
-        tools:
-          - generate_audit_report
-          - list_access_events
-
-  - id: allow-dev-local-tools
-    description: Allow developers to use gateway-managed local tools
-    effect: allow
-    subjects:
-      groups:
-        - developers
-    mcp_servers:
-      - name: local-tools-mcp
-        tools:
-          - format_code
-          - lint_project
-
 logging:
-  level: info
-  include:
-    - user
-    - groups
-    - mcp_server
-    - tool
-    - decision
-    - correlation_id
-    - transport
+  level: INFO  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  format: json  # json (default) or text for human-readable output
 
 masking:
   presidio:
-    enabled: true
+    enabled: true  # Requires separate Presidio plugin installation
     entities:
       - PERSON
       - EMAIL_ADDRESS
@@ -126,7 +85,7 @@ masking:
 - Wildcards allowed for tools and servers
 - No dynamic reload in MVP (restart required)
 - Group membership is resolved from Okta token claims
-- **Transport type** is declared in the `servers` section for connection configuration; it is informational for policy purposes — governance applies equally regardless of whether the server uses HTTP or stdio
-- For `http` servers: `url` specifies the server endpoint
-- For `stdio` servers: `command` and optional `args` specify the process to spawn
+- **HTTP servers only** — Only HTTP servers can be configured in policy files. stdio servers are spawned dynamically by the gateway and are not configured through policy
+- **Governance applies to all transports** — Policy enforcement applies equally whether the gateway connects to a server via HTTP or spawns it via stdio
+- **Identity configuration** — The `identity` section requires `issuer` and `audience` for JWT validation, in addition to the provider name
 

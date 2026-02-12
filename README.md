@@ -16,11 +16,11 @@ Enterprise AI Tool ──► MCP Gateway ──► MCP Servers
 
 ## Features
 
-- **Identity** — Okta OAuth2 JWT validation with on-behalf-of token exchange for downstream servers
+- **Identity** — Okta OAuth2 JWT validation (OBO token exchange requires explicit configuration - see docs/okta_obo_for_an_enterprise_mcp_gateway.md)
 - **Governance** — YAML policy files with default-deny rules scoped to server, tool, user, and group
 - **Data Protection** — Inline PII and secret masking via Microsoft Presidio on both inputs and outputs
 - **Auditing** — Structured logs with user attribution, correlation IDs, and policy decisions
-- **Transport** — Streamable HTTP for remote servers, stdio for gateway-managed local processes
+- **Transport** — Streamable HTTP for remote servers, stdio for gateway-managed local processes. Both HTTP and stdio transports enforce the same governance, masking, and audit policies through a unified pipeline.
 - **Pipeline** — Hook-based request lifecycle with ordered execution and short-circuit support
 
 ## Quick Start
@@ -28,6 +28,16 @@ Enterprise AI Tool ──► MCP Gateway ──► MCP Servers
 ### Prerequisites
 - Python 3.12+
 - An Okta tenant (for identity validation)
+
+### Security Notice
+
+**IMPORTANT**: The gateway enforces security by default and requires proper configuration:
+
+- **Policy file required**: Gateway requires `MCP_POLICY_FILE` to be set or it will refuse to start (unless `MCP_ALLOW_INSECURE=true` is explicitly set for dev/testing only)
+- **Default-deny**: Without an explicit policy allowing access, all requests are denied by default
+- **Masking dependencies**: PII/secret masking requires Presidio dependencies to be installed (included in standard installation)
+
+Never run with `MCP_ALLOW_INSECURE=true` in production environments.
 
 ### Install
 
@@ -63,10 +73,6 @@ identity:
   provider: okta
   issuer: https://your-org.okta.com
   audience: your-app-audience
-  claim_mapping:
-    user_id: sub
-    email: email
-    groups: groups
 
 servers:
   - name: my-mcp-server
@@ -129,7 +135,9 @@ The gateway starts on `0.0.0.0:8080` by default (configurable via `MCP_HOST` and
 | `MCP_UPSTREAM_URL` | Single upstream MCP server URL (legacy fallback) | _(none)_ |
 | `MCP_HOST` | Host to bind the gateway | `0.0.0.0` |
 | `MCP_PORT` | Port to bind the gateway | `8080` |
+| `MCP_ALLOW_INSECURE` | Allow running without security controls (dev/testing only) | `false` |
 | `LOG_LEVEL` | Logging level (DEBUG, INFO, WARNING, ERROR) | `INFO` |
+| `LOG_FORMAT` | Log output format (`json` or `text`) | `json` |
 | `OKTA_ISSUER` | Okta token issuer URL (fallback if no policy file) | _(none)_ |
 | `OKTA_AUDIENCE` | Expected JWT audience claim (fallback if no policy file) | _(none)_ |
 | `OKTA_TOKEN_ENDPOINT` | Okta token exchange endpoint (for OBO) | _(none)_ |
@@ -157,21 +165,9 @@ servers:
   - name: remote-api
     transport: http
     url: https://mcp-server.corp/mcp
-    token_exchange: true           # Enable OBO
-    target_audience: api://server  # OBO target
-    required_scopes: [read, write]
 ```
 
-**stdio servers** — local processes spawned and managed by the gateway:
-```yaml
-servers:
-  - name: local-tools
-    transport: stdio
-    command: /usr/local/bin/mcp-server
-    args: ["--config", "/etc/config.yaml"]
-    env:
-      DEBUG: "1"
-```
+**stdio servers** — local processes spawned and managed by the gateway. Note: stdio servers are spawned dynamically and cannot currently be configured via policy files.
 
 ## Development
 
@@ -244,7 +240,7 @@ How mcp-zero compares to other MCP gateways:
 | **License** | ✅ MIT | ✅ Apache 2.0 (Linux Foundation) | ❌ Commercial SaaS | ✅ MIT | ✅ MIT |
 | **Language** | Python | Rust / Go | Proprietary | .NET / C# | Python |
 | **Transport** | ✅ Streamable HTTP, stdio | ✅ Streamable HTTP, SSE, stdio | ✅ HTTP, SSE, stdio | Streamable HTTP only | stdio only |
-| **Authentication** | ✅ Okta OAuth2 JWT, OBO token exchange | ✅ JWT, API keys, OAuth (Auth0, Keycloak), MCP auth spec | ✅ OAuth 2.0, SAML, SSO (Okta, Azure AD) | Azure Entra ID / OAuth 2.0 | ❌ None built-in |
+| **Authentication** | ✅ Okta OAuth2 JWT | ✅ JWT, API keys, OAuth (Auth0, Keycloak), MCP auth spec | ✅ OAuth 2.0, SAML, SSO (Okta, Azure AD) | Azure Entra ID / OAuth 2.0 | ❌ None built-in |
 | **Governance** | ✅ YAML/JSON policy files, default-deny, server/tool/user/group rules | ✅ RBAC, Cedar policy engine, rate limiting | RBAC/ABAC, Virtual MCP role-based endpoints | RBAC via Entra ID roles | ❌ Plugin-based only |
 | **Data protection** | ✅ Inline Presidio masking on inputs and outputs | ❌ None built-in | ✅ PII redaction, secrets scanning, content filtering | ❌ None built-in | Presidio PII + regex secret masking |
 | **Auditing** | ✅ Structured logs with user attribution, correlation IDs, policy decisions | ✅ OpenTelemetry metrics, logs, distributed tracing | ✅ Immutable audit trail, dashboards, SOC 2 | Azure Application Insights | SQLite-based tool call tracing |
