@@ -38,9 +38,7 @@ class TestRedisAnalyticsClientInit:
         mock_cluster = AsyncMock()
         mock_cluster.ping = AsyncMock()
 
-        with patch(
-            "redis.asyncio.cluster.RedisCluster.from_url", return_value=mock_cluster
-        ):
+        with patch("redis.asyncio.cluster.RedisCluster.from_url", return_value=mock_cluster):
             await client.connect()
 
         assert client.connected is True

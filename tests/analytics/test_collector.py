@@ -58,9 +58,7 @@ class TestAnalyticsCollectorEnqueue:
         client = FakeRedisClient()
         collector = AnalyticsCollector(config, client)
 
-        collector.record_denial(
-            server="s1", tool="t1", user_id="alice", rule_id="r1"
-        )
+        collector.record_denial(server="s1", tool="t1", user_id="alice", rule_id="r1")
         assert collector._queue.qsize() == 1
 
     def test_record_redaction_enqueues(self):
@@ -68,9 +66,7 @@ class TestAnalyticsCollectorEnqueue:
         client = FakeRedisClient()
         collector = AnalyticsCollector(config, client)
 
-        collector.record_redaction(
-            server="s1", tool="t1", entity_type="EMAIL", count=3
-        )
+        collector.record_redaction(server="s1", tool="t1", entity_type="EMAIL", count=3)
         assert collector._queue.qsize() == 1
 
     def test_record_output_redaction_enqueues(self):
@@ -78,9 +74,7 @@ class TestAnalyticsCollectorEnqueue:
         client = FakeRedisClient()
         collector = AnalyticsCollector(config, client)
 
-        collector.record_output_redaction(
-            server="s1", tool="t1", entity_type="PERSON", count=2
-        )
+        collector.record_output_redaction(server="s1", tool="t1", entity_type="PERSON", count=2)
         assert collector._queue.qsize() == 1
 
     def test_record_masking_failure_enqueues(self):
@@ -88,9 +82,7 @@ class TestAnalyticsCollectorEnqueue:
         client = FakeRedisClient()
         collector = AnalyticsCollector(config, client)
 
-        collector.record_masking_failure(
-            server="s1", tool="t1", direction="input"
-        )
+        collector.record_masking_failure(server="s1", tool="t1", direction="input")
         assert collector._queue.qsize() == 1
 
     def test_record_error_enqueues(self):
@@ -166,10 +158,7 @@ class TestAnalyticsCollectorBuildOperations:
         )
 
         ops = collector._build_operations([event])
-        transport_ops = [
-            op for op in ops
-            if op[0] == "HINCRBY" and ":calls:transport" in op[1][0]
-        ]
+        transport_ops = [op for op in ops if op[0] == "HINCRBY" and ":calls:transport" in op[1][0]]
         assert len(transport_ops) == 1
         assert transport_ops[0][1][1] == "stdio"
 
@@ -180,20 +169,23 @@ class TestAnalyticsCollectorBuildOperations:
 
         events = [
             AnalyticsEvent(
-                event_type=EventType.TOOL_CALL, server="s1", tool="t1",
-                duration_ms=100.0, timestamp=60000.0,
+                event_type=EventType.TOOL_CALL,
+                server="s1",
+                tool="t1",
+                duration_ms=100.0,
+                timestamp=60000.0,
             ),
             AnalyticsEvent(
-                event_type=EventType.TOOL_CALL, server="s1", tool="t1",
-                duration_ms=250.0, timestamp=60000.0,
+                event_type=EventType.TOOL_CALL,
+                server="s1",
+                tool="t1",
+                duration_ms=250.0,
+                timestamp=60000.0,
             ),
         ]
 
         ops = collector._build_operations(events)
-        hset_ops = [
-            op for op in ops
-            if op[0] == "HSET" and ":latency:max" in op[1][0]
-        ]
+        hset_ops = [op for op in ops if op[0] == "HSET" and ":latency:max" in op[1][0]]
         assert len(hset_ops) == 1
         # Should be the max of 100 and 250
         assert hset_ops[0][1][2] == "250"
@@ -235,10 +227,7 @@ class TestAnalyticsCollectorBuildOperations:
         )
 
         ops = collector._build_operations([event])
-        reason_ops = [
-            op for op in ops
-            if op[0] == "HINCRBY" and ":denials:reason" in op[1][0]
-        ]
+        reason_ops = [op for op in ops if op[0] == "HINCRBY" and ":denials:reason" in op[1][0]]
         assert len(reason_ops) == 1
         assert reason_ops[0][1][1] == "no_identity"
 
@@ -262,10 +251,7 @@ class TestAnalyticsCollectorBuildOperations:
         assert any(":redactions:input" in k for k in hincrby_keys)
         assert any(":redactions:tool" in k for k in hincrby_keys)
         # Verify entity_type as field name
-        input_ops = [
-            op for op in ops
-            if op[0] == "HINCRBY" and ":redactions:input" in op[1][0]
-        ]
+        input_ops = [op for op in ops if op[0] == "HINCRBY" and ":redactions:input" in op[1][0]]
         assert input_ops[0][1][1] == "EMAIL_ADDRESS"
         assert input_ops[0][1][2] == 5
 
@@ -303,10 +289,7 @@ class TestAnalyticsCollectorBuildOperations:
         )
 
         ops = collector._build_operations([event])
-        fail_ops = [
-            op for op in ops
-            if op[0] == "HINCRBY" and ":redactions:fail" in op[1][0]
-        ]
+        fail_ops = [op for op in ops if op[0] == "HINCRBY" and ":redactions:fail" in op[1][0]]
         assert len(fail_ops) == 1
         assert fail_ops[0][1][1] == "output"
 
@@ -333,11 +316,15 @@ class TestAnalyticsCollectorBuildOperations:
 
         events = [
             AnalyticsEvent(
-                event_type=EventType.TOOL_CALL, server="s1", tool="t1",
+                event_type=EventType.TOOL_CALL,
+                server="s1",
+                tool="t1",
                 timestamp=60000.0,
             ),
             AnalyticsEvent(
-                event_type=EventType.TOOL_CALL, server="s1", tool="t2",
+                event_type=EventType.TOOL_CALL,
+                server="s1",
+                tool="t2",
                 timestamp=60000.0,
             ),
         ]

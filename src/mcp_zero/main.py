@@ -130,10 +130,12 @@ def _build_analytics_config(policy_config: PolicyConfig | None) -> AnalyticsConf
         gateway_id=os.environ.get("ANALYTICS_GATEWAY_ID", gw_default),
         key_prefix=os.environ.get("ANALYTICS_KEY_PREFIX", prefix_default),
         bucket_seconds=config.bucket_seconds if config else 60,
-        retention_seconds=int(os.environ.get(
-            "ANALYTICS_RETENTION_SECONDS",
-            str(retention_default),
-        )),
+        retention_seconds=int(
+            os.environ.get(
+                "ANALYTICS_RETENTION_SECONDS",
+                str(retention_default),
+            )
+        ),
         heartbeat_seconds=config.heartbeat_seconds if config else 30,
         queue_size=config.queue_size if config else 10000,
         flush_interval=config.flush_interval if config else 1.0,

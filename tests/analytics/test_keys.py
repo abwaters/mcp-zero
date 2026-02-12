@@ -26,19 +26,12 @@ class TestKeyBuilder:
         assert key == "mcpgw:gw:production:gw1:b:12345:calls:tool"
 
     def test_bucket_key_latency(self):
-        assert (
-            self.kb.bucket_key("latency", "sum", 1)
-            == "mcpgw:gw:production:gw1:b:1:latency:sum"
-        )
-        assert (
-            self.kb.bucket_key("latency", "max", 1)
-            == "mcpgw:gw:production:gw1:b:1:latency:max"
-        )
+        assert self.kb.bucket_key("latency", "sum", 1) == "mcpgw:gw:production:gw1:b:1:latency:sum"
+        assert self.kb.bucket_key("latency", "max", 1) == "mcpgw:gw:production:gw1:b:1:latency:max"
 
     def test_bucket_key_denials(self):
         assert (
-            self.kb.bucket_key("denials", "tool", 1)
-            == "mcpgw:gw:production:gw1:b:1:denials:tool"
+            self.kb.bucket_key("denials", "tool", 1) == "mcpgw:gw:production:gw1:b:1:denials:tool"
         )
         assert (
             self.kb.bucket_key("denials", "reason", 1)
@@ -76,17 +69,13 @@ class TestKeyBuilder:
 
     def test_different_environments_produce_different_keys(self):
         kb_staging = KeyBuilder("mcpgw", "staging", "gw1")
-        assert self.kb.bucket_key("calls", "tool", 1) != kb_staging.bucket_key(
-            "calls", "tool", 1
-        )
+        assert self.kb.bucket_key("calls", "tool", 1) != kb_staging.bucket_key("calls", "tool", 1)
         assert self.kb.info_key() != kb_staging.info_key()
         assert self.kb.idx_gateways_key() != kb_staging.idx_gateways_key()
 
     def test_different_gateways_produce_different_keys(self):
         kb_other = KeyBuilder("mcpgw", "production", "gw2")
-        assert self.kb.bucket_key("calls", "tool", 1) != kb_other.bucket_key(
-            "calls", "tool", 1
-        )
+        assert self.kb.bucket_key("calls", "tool", 1) != kb_other.bucket_key("calls", "tool", 1)
         assert self.kb.info_key() != kb_other.info_key()
         # Registry and idx:envs are shared across gateways (same prefix)
         assert self.kb.registry_key() == kb_other.registry_key()

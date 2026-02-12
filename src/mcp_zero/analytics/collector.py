@@ -65,9 +65,7 @@ class AnalyticsCollector:
         self._config = config
         self._client = client
         self._keys = KeyBuilder(config.key_prefix, config.environment, config.gateway_id)
-        self._queue: asyncio.Queue[AnalyticsEvent] = asyncio.Queue(
-            maxsize=config.queue_size
-        )
+        self._queue: asyncio.Queue[AnalyticsEvent] = asyncio.Queue(maxsize=config.queue_size)
         self._flush_task: asyncio.Task[None] | None = None
         self._heartbeat_task: asyncio.Task[None] | None = None
         self._started_at = time.time()
@@ -81,9 +79,7 @@ class AnalyticsCollector:
         self._running = True
         self._started_at = time.time()
         await self._client.connect()
-        self._flush_task = asyncio.create_task(
-            self._flush_loop(), name="analytics-flush"
-        )
+        self._flush_task = asyncio.create_task(self._flush_loop(), name="analytics-flush")
         self._heartbeat_task = asyncio.create_task(
             self._heartbeat_loop(), name="analytics-heartbeat"
         )
@@ -200,9 +196,7 @@ class AnalyticsCollector:
             )
         )
 
-    def record_masking_failure(
-        self, *, server: str, tool: str, direction: str
-    ) -> None:
+    def record_masking_failure(self, *, server: str, tool: str, direction: str) -> None:
         """Enqueue a masking failure event.
 
         Args:
@@ -267,9 +261,7 @@ class AnalyticsCollector:
         operations = self._build_operations(events)
         await self._client.execute_pipeline(operations)
 
-    def _build_operations(
-        self, events: list[AnalyticsEvent]
-    ) -> list[tuple[str, list[Any]]]:
+    def _build_operations(self, events: list[AnalyticsEvent]) -> list[tuple[str, list[Any]]]:
         """Convert a batch of events into Redis pipeline operations."""
         ops: list[tuple[str, list[Any]]] = []
         ttl = self._config.retention_seconds
@@ -278,34 +270,46 @@ class AnalyticsCollector:
         latency_maxes: dict[tuple[str, str], int] = {}
 
         for event in events:
-            bid = self._keys.bucket_id(
-                self._config.bucket_seconds, event.timestamp
-            )
+            bid = self._keys.bucket_id(self._config.bucket_seconds, event.timestamp)
             tool_field = f"{event.server}::{event.tool}"
 
             if event.event_type == EventType.TOOL_CALL:
                 self._hincrby(ops, keys_seen, "calls", "tool", bid, tool_field, 1, ttl)
-                self._hincrby(
-                    ops, keys_seen, "calls", "server", bid, event.server, 1, ttl
-                )
+                self._hincrby(ops, keys_seen, "calls", "server", bid, event.server, 1, ttl)
                 if event.user_id:
-                    self._hincrby(
-                        ops, keys_seen, "calls", "user", bid, event.user_id, 1, ttl
-                    )
+                    self._hincrby(ops, keys_seen, "calls", "user", bid, event.user_id, 1, ttl)
                 if event.transport:
                     self._hincrby(
-                        ops, keys_seen, "calls", "transport", bid,
-                        event.transport, 1, ttl,
+                        ops,
+                        keys_seen,
+                        "calls",
+                        "transport",
+                        bid,
+                        event.transport,
+                        1,
+                        ttl,
                     )
                 if event.duration_ms > 0:
                     duration_int = int(event.duration_ms)
                     self._hincrby(
-                        ops, keys_seen, "latency", "sum", bid,
-                        tool_field, duration_int, ttl,
+                        ops,
+                        keys_seen,
+                        "latency",
+                        "sum",
+                        bid,
+                        tool_field,
+                        duration_int,
+                        ttl,
                     )
                     self._hincrby(
-                        ops, keys_seen, "latency", "count", bid,
-                        tool_field, 1, ttl,
+                        ops,
+                        keys_seen,
+                        "latency",
+                        "count",
+                        bid,
+                        tool_field,
+                        1,
+                        ttl,
                     )
                     # Track max for deferred HSET
                     max_key = self._keys.bucket_key("latency", "max", bid)
@@ -314,65 +318,121 @@ class AnalyticsCollector:
                         latency_maxes[(max_key, tool_field)] = duration_int
                 if event.request_bytes > 0:
                     self._hincrby(
-                        ops, keys_seen, "sizes", "request", bid,
-                        tool_field, event.request_bytes, ttl,
+                        ops,
+                        keys_seen,
+                        "sizes",
+                        "request",
+                        bid,
+                        tool_field,
+                        event.request_bytes,
+                        ttl,
                     )
                 if event.response_bytes > 0:
                     self._hincrby(
-                        ops, keys_seen, "sizes", "response", bid,
-                        tool_field, event.response_bytes, ttl,
+                        ops,
+                        keys_seen,
+                        "sizes",
+                        "response",
+                        bid,
+                        tool_field,
+                        event.response_bytes,
+                        ttl,
                     )
 
             elif event.event_type == EventType.DENIAL:
-                self._hincrby(
-                    ops, keys_seen, "denials", "tool", bid, tool_field, 1, ttl
-                )
+                self._hincrby(ops, keys_seen, "denials", "tool", bid, tool_field, 1, ttl)
                 if event.rule_id:
                     self._hincrby(
-                        ops, keys_seen, "denials", "rule", bid,
-                        event.rule_id, 1, ttl,
+                        ops,
+                        keys_seen,
+                        "denials",
+                        "rule",
+                        bid,
+                        event.rule_id,
+                        1,
+                        ttl,
                     )
                 if event.user_id:
                     self._hincrby(
-                        ops, keys_seen, "denials", "user", bid,
-                        event.user_id, 1, ttl,
+                        ops,
+                        keys_seen,
+                        "denials",
+                        "user",
+                        bid,
+                        event.user_id,
+                        1,
+                        ttl,
                     )
                 if event.reason:
                     self._hincrby(
-                        ops, keys_seen, "denials", "reason", bid,
-                        event.reason, 1, ttl,
+                        ops,
+                        keys_seen,
+                        "denials",
+                        "reason",
+                        bid,
+                        event.reason,
+                        1,
+                        ttl,
                     )
 
             elif event.event_type == EventType.REDACTION:
                 self._hincrby(
-                    ops, keys_seen, "redactions", "input", bid,
-                    event.entity_type, event.count, ttl,
+                    ops,
+                    keys_seen,
+                    "redactions",
+                    "input",
+                    bid,
+                    event.entity_type,
+                    event.count,
+                    ttl,
                 )
                 self._hincrby(
-                    ops, keys_seen, "redactions", "tool", bid,
-                    tool_field, event.count, ttl,
+                    ops,
+                    keys_seen,
+                    "redactions",
+                    "tool",
+                    bid,
+                    tool_field,
+                    event.count,
+                    ttl,
                 )
 
             elif event.event_type == EventType.OUTPUT_REDACTION:
                 self._hincrby(
-                    ops, keys_seen, "redactions", "output", bid,
-                    event.entity_type, event.count, ttl,
+                    ops,
+                    keys_seen,
+                    "redactions",
+                    "output",
+                    bid,
+                    event.entity_type,
+                    event.count,
+                    ttl,
                 )
                 self._hincrby(
-                    ops, keys_seen, "redactions", "tool", bid,
-                    tool_field, event.count, ttl,
+                    ops,
+                    keys_seen,
+                    "redactions",
+                    "tool",
+                    bid,
+                    tool_field,
+                    event.count,
+                    ttl,
                 )
 
             elif event.event_type == EventType.MASKING_FAILURE:
                 self._hincrby(
-                    ops, keys_seen, "redactions", "fail", bid,
-                    event.direction, 1, ttl,
+                    ops,
+                    keys_seen,
+                    "redactions",
+                    "fail",
+                    bid,
+                    event.direction,
+                    1,
+                    ttl,
                 )
 
             elif event.event_type == EventType.ERROR:
-                self._hincrby(
-                    ops, keys_seen, "errors", "tool", bid, tool_field, 1, ttl
-                )
+                self._hincrby(ops, keys_seen, "errors", "tool", bid, tool_field, 1, ttl)
 
         # Emit HSET for latency max values (not HINCRBY — we want max, not sum).
         # This is approximate when multiple flushes compete, but good enough for
@@ -435,13 +495,20 @@ class AnalyticsCollector:
                 "HSET",
                 [
                     info_key,
-                    "host", host,
-                    "port", port,
-                    "environment", self._config.environment,
-                    "gateway_id", self._config.gateway_id,
-                    "started_at", str(int(self._started_at)),
-                    "last_heartbeat", str(int(now)),
-                    "key_prefix", self._config.key_prefix,
+                    "host",
+                    host,
+                    "port",
+                    port,
+                    "environment",
+                    self._config.environment,
+                    "gateway_id",
+                    self._config.gateway_id,
+                    "started_at",
+                    str(int(self._started_at)),
+                    "last_heartbeat",
+                    str(int(now)),
+                    "key_prefix",
+                    self._config.key_prefix,
                 ],
             ),
             ("EXPIRE", [info_key, info_ttl]),
