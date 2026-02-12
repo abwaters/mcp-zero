@@ -47,9 +47,7 @@ class PluginManager:
         """Return sorted list of discovered entry-point names."""
         return sorted(self._available)
 
-    def load_plugins(
-        self, declarations: list[PluginDeclaration], registry: HookRegistry
-    ) -> None:
+    def load_plugins(self, declarations: list[PluginDeclaration], registry: HookRegistry) -> None:
         """Load, configure, and register plugins from policy declarations.
 
         Args:
@@ -65,9 +63,7 @@ class PluginManager:
             self._plugins.append(plugin)
             logger.info("Plugin '%s' loaded and registered", decl.name)
 
-    def _load_one(
-        self, name: str, package: str, config: dict
-    ) -> Plugin:
+    def _load_one(self, name: str, package: str, config: dict) -> Plugin:
         """Resolve entry point, instantiate, validate, and configure a plugin."""
         ep_name = package or name
         if ep_name not in self._available:
@@ -81,16 +77,12 @@ class PluginManager:
         try:
             factory = ep.load()
         except Exception as exc:
-            raise PluginLoadError(
-                f"Failed to load entry point for plugin '{name}': {exc}"
-            ) from exc
+            raise PluginLoadError(f"Failed to load entry point for plugin '{name}': {exc}") from exc
 
         try:
             plugin = factory()
         except Exception as exc:
-            raise PluginLoadError(
-                f"Factory for plugin '{name}' raised: {exc}"
-            ) from exc
+            raise PluginLoadError(f"Factory for plugin '{name}' raised: {exc}") from exc
 
         if not isinstance(plugin, Plugin):
             raise PluginLoadError(
@@ -101,9 +93,7 @@ class PluginManager:
         try:
             plugin.configure(config)
         except Exception as exc:
-            raise PluginLoadError(
-                f"Plugin '{name}' configure() failed: {exc}"
-            ) from exc
+            raise PluginLoadError(f"Plugin '{name}' configure() failed: {exc}") from exc
 
         return plugin
 

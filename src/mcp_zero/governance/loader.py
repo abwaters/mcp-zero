@@ -443,9 +443,7 @@ def _build_plugins(data: list) -> list[PluginDeclaration]:
 
     for i, item in enumerate(data):
         if not isinstance(item, dict):
-            raise PolicyValidationError(
-                f"plugins[{i}] must be a mapping", field=f"plugins[{i}]"
-            )
+            raise PolicyValidationError(f"plugins[{i}] must be a mapping", field=f"plugins[{i}]")
         try:
             decl = PluginDeclaration(
                 name=item.get("name", ""),
@@ -457,9 +455,7 @@ def _build_plugins(data: list) -> list[PluginDeclaration]:
             raise PolicyValidationError(str(exc), field=f"plugins[{i}]") from exc
 
         if decl.name in seen_names:
-            raise PolicyValidationError(
-                f"Duplicate plugin name: '{decl.name}'", field="plugins"
-            )
+            raise PolicyValidationError(f"Duplicate plugin name: '{decl.name}'", field="plugins")
         seen_names.add(decl.name)
         declarations.append(decl)
 
