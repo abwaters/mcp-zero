@@ -1,0 +1,16 @@
+.venv/
+.git/
+.github/
+.data/
+.env
+.idea/
+.claude/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+htmlcov/
+.coverage
+.pytest_cache/
+*.so
