@@ -1,9 +1,13 @@
 # Plugin Architecture Design
 
-> **STATUS**: This document describes a planned feature that is **NOT YET IMPLEMENTED**.
-> The plugin architecture described here does not exist in the current codebase.
-> Presidio masking is currently hardcoded, not plugin-based.
-> This is a design specification for future implementation.
+> **STATUS**: This design has been **IMPLEMENTED**. The plugin infrastructure, entry-point
+> discovery, `PluginManager`, and Presidio-as-a-plugin are all in production code. The
+> built-in Presidio plugin lives at `src/mcp_zero/plugins/presidio_masking.py` and is
+> registered via the `mcp_zero.plugins` entry-point group in `pyproject.toml`.
+>
+> Phase 2 (extracting Presidio into a separate package) and Phase 3 (example plugins)
+> from the implementation plan below have not been started — Presidio remains a built-in
+> plugin rather than a separate installable package.
 
 ## Problem Statement
 

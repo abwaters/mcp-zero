@@ -9,9 +9,14 @@ Deploy it as a single Python service. Configure it with a YAML policy file. No a
 ```
 Enterprise AI Tool ──► MCP Gateway ──► MCP Servers
                          │
-              ┌──────────┼──────────┐
-          Identity    Governance   Masking
-          (Okta)     (Policy)    (Presidio)
+              ┌──────────┴──────────┐
+              │   Hook Pipeline     │
+              │                     │
+              │   Identity  (core)  │
+              │   Governance (core) │
+              │   ◇ Plugins  (ext)  │
+              │   Audit     (core)  │
+              └─────────────────────┘
 ```
 
 ## Features
@@ -22,6 +27,7 @@ Enterprise AI Tool ──► MCP Gateway ──► MCP Servers
 - **Auditing** — Structured logs with user attribution, correlation IDs, and policy decisions
 - **Transport** — Streamable HTTP for remote servers, stdio for gateway-managed local processes. Both HTTP and stdio transports enforce the same governance, masking, and audit policies through a unified pipeline.
 - **Pipeline** — Hook-based request lifecycle with ordered execution and short-circuit support
+- **Plugins** — Entry-point based plugin architecture for extending the pipeline with custom hooks (masking, rate limiting, metrics, etc.)
 
 ## Quick Start
 
@@ -162,7 +168,8 @@ Key concepts:
 - **`default`**: `deny` (recommended) or `allow`
 - **`servers`**: Downstream MCP server definitions (HTTP or stdio)
 - **`policies`**: Ordered rules evaluated top-down; explicit deny overrides allow
-- **`masking`**: Presidio entity detection configuration
+- **`masking`**: Presidio entity detection configuration (legacy — see `plugins` below)
+- **`plugins`**: Plugin declarations for extensible pipeline hooks (masking, rate limiting, etc.)
 
 ### Server Types
 
@@ -205,25 +212,43 @@ scripts\run.bat            # Run gateway
 ```
 src/mcp_zero/
 ├── main.py              # Application entry point
+├── plugin.py            # Plugin protocol and base class
+├── plugin_manager.py    # Plugin discovery and lifecycle
 ├── context.py           # RequestContext, HookContext, UserIdentity
 ├── identity/            # Okta JWT validation, OBO token exchange
 ├── governance/          # Policy loading, evaluation, enforcement
-├── masking/             # Presidio PII/secret detection and masking
+├── masking/             # Masking engine interface and hook
+├── plugins/             # Built-in plugins (Presidio masking)
 ├── pipeline/            # Hook lifecycle, registry, execution
 ├── proxy/               # Starlette app, server management, tool routing
+├── analytics/           # Optional Redis-based analytics
 └── transport/           # HTTP and stdio MCP transport clients
 ```
 
 ### Architecture
 
-The gateway uses a hook-based pipeline architecture. Each request flows through ordered lifecycle hooks that can inspect, modify, or reject the request:
+The gateway uses a hook-based pipeline with a plugin system. Core hooks handle identity, governance, and audit. Everything else — masking, rate limiting, metrics — is a plugin loaded from the policy file.
 
-1. **IdentityHook** (PRE_VALIDATION) — validates JWT, resolves user identity
-2. **GovernanceHook** (POST_VALIDATION) — evaluates policy rules, allows or denies
-3. **MaskingHook** (PRE_MASKING) — detects and replaces PII/secrets in payloads
-4. **AuditHook** (PRE_AUDIT) — emits structured log with full request context
+**Core hooks** (always present):
 
-Hooks are registered with priorities and executed in order. Any hook can short-circuit the pipeline (e.g., governance denial stops processing immediately).
+| Priority | Hook | Phase | Purpose |
+|----------|------|-------|---------|
+| 10 | IdentityHook | PRE_VALIDATION | Validates JWT, resolves user identity |
+| 50 | GovernanceHook | POST_VALIDATION | Evaluates policy rules, allows or denies |
+| 145 | AnalyticsHook | PRE_AUDIT | Records metrics to Redis (when configured) |
+| 150 | AuditHook | PRE_AUDIT | Emits structured log with full request context |
+
+**Plugin hooks** (loaded from policy file `plugins:` section):
+
+| Priority Range | Slot | Examples |
+|----------------|------|---------|
+| 20–49 | Pre-governance | Rate limiting, request validation |
+| 70–99 | Post-governance | Masking (Presidio at 75), transformation |
+| 100–139 | General | Metrics, caching, custom hooks |
+
+Hooks execute in priority order. Any hook can short-circuit the pipeline (e.g., governance denial stops processing immediately).
+
+**Plugin system**: Plugins are discovered via Python entry points (`mcp_zero.plugins` group), configured in the policy file, and registered into the pipeline at startup. See [`docs/plugin-architecture-design.md`](docs/plugin-architecture-design.md) for details.
 
 ## Documentation
 
