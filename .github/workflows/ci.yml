@@ -32,6 +32,22 @@ jobs:
       - name: Test
         run: pytest -v
 
+  integration:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Stdio integration tests
+        run: pytest tests/integration/test_stdio_integration.py -v
+
   dependabot-auto-merge:
     needs: test
     runs-on: ubuntu-latest
