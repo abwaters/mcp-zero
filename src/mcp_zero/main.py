@@ -187,7 +187,8 @@ def _build_pipeline(
             )
         elif issuer and not audience:
             logger.warning(
-                "OKTA_ISSUER set but OKTA_AUDIENCE missing — identity validation disabled"
+                "OKTA_ISSUER set but OKTA_AUDIENCE missing — identity validation disabled. "
+                "This is a misconfiguration: set OKTA_AUDIENCE to enable identity validation."
             )
 
     if identity_config is not None:
@@ -198,7 +199,15 @@ def _build_pipeline(
         identity_enabled = True
         logger.info("Identity validation enabled (issuer=%s)", identity_config.issuer)
     else:
-        logger.info("Identity validation disabled — no identity configuration found")
+        if policy_config is not None:
+            logger.warning(
+                "SECURITY POSTURE: Governance policy loaded WITHOUT identity validation. "
+                "All requests will be evaluated as 'anonymous'. "
+                "Configure identity (OKTA_ISSUER + OKTA_AUDIENCE or policy identity section) "
+                "for authenticated access control."
+            )
+        else:
+            logger.info("Identity validation disabled — no identity configuration found")
 
     # --- Governance hook (requires policy file) ---
     if policy_config is not None:
@@ -228,7 +237,7 @@ def _build_pipeline(
 
     # Only build the pipeline if at least one functional hook was registered
     if not identity_enabled and policy_config is None:
-        logger.info("No identity or policy configuration — pipeline disabled")
+        logger.warning("No identity or policy configuration — pipeline disabled")
         return None, plugin_manager
 
     registry.build()
@@ -349,6 +358,25 @@ def run() -> None:
                 "Do NOT use this in production."
             )
 
+    # Refuse startup on partial identity misconfiguration: OKTA_ISSUER is set
+    # but OKTA_AUDIENCE is missing while a policy file is loaded.  This is almost
+    # certainly a deployment mistake — the operator intended to enable identity
+    # but the gateway would silently run without it (see F-03).
+    if (
+        policy_config is not None
+        and identity_config is None
+        and os.environ.get("OKTA_ISSUER", "")
+        and not os.environ.get("OKTA_AUDIENCE", "")
+        and not _is_insecure_allowed()
+    ):
+        logger.critical(
+            "REFUSING TO START: OKTA_ISSUER is set but OKTA_AUDIENCE is missing. "
+            "The gateway has a policy file but cannot enable identity validation — "
+            "this is a misconfiguration. Set OKTA_AUDIENCE, or remove OKTA_ISSUER, "
+            "or set MCP_ALLOW_INSECURE=true to start without identity (dev only)."
+        )
+        sys.exit(78)
+
     # Build OBO auth provider when Okta OBO env vars are set
     auth_provider = _build_obo_provider(configs)
 
@@ -365,11 +393,33 @@ def run() -> None:
         fmt = policy_config.logging.format
     analytics_active = analytics_collector is not None
     plugin_count = len(plugin_manager.loaded_plugins)
+
+    identity_active = pipeline is not None and identity_config is not None
+    governance_active = policy_config is not None
+
+    # Emit security posture at appropriate level
+    if identity_active and governance_active:
+        logger.info(
+            "SECURITY POSTURE [ENFORCING]: identity=enabled, governance=enabled (%d rules)",
+            len(policy_config.policies),
+        )
+    elif governance_active and not identity_active:
+        logger.warning(
+            "SECURITY POSTURE [DEGRADED]: identity=disabled, governance=enabled (%d rules). "
+            "Policy rules will evaluate with anonymous identity.",
+            len(policy_config.policies),
+        )
+    elif _is_insecure_allowed():
+        logger.warning(
+            "SECURITY POSTURE [INSECURE]: identity=disabled, governance=disabled. "
+            "All requests proxied without security controls (MCP_ALLOW_INSECURE=true).",
+        )
+
     logger.info(
         "Gateway ready: servers=%d, identity=%s, governance=%s, "
         "analytics=%s, plugins=%d, log_format=%s, log_level=%s",
         len(configs),
-        "enabled" if pipeline else "disabled",
+        "enabled" if identity_active else "disabled",
         "enabled (%d rules)" % len(policy_config.policies) if policy_config else "disabled",
         "enabled" if analytics_active else "disabled",
         plugin_count,
