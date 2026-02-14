@@ -14,6 +14,7 @@ from mcp_zero.analytics.client import RedisAnalyticsClient
 from mcp_zero.analytics.collector import AnalyticsCollector
 from mcp_zero.analytics.config import RedisConfig
 from mcp_zero.audit import AuditHook
+from mcp_zero.events.bus import EventBus
 from mcp_zero.governance import GovernanceHook, PolicyConfig, PolicyEngine
 from mcp_zero.governance.errors import GovernanceError
 from mcp_zero.governance.loader import (
@@ -172,6 +173,7 @@ def _build_pipeline(
     """
     registry = HookRegistry()
     plugin_manager = PluginManager()
+    event_bus = EventBus()
     identity_enabled = False
 
     # --- Identity hook (optional) ---
@@ -207,7 +209,7 @@ def _build_pipeline(
 
     # --- Plugins (loaded from policy file declarations) ---
     if policy_config is not None and policy_config.plugins:
-        plugin_manager.load_plugins(policy_config.plugins, registry)
+        plugin_manager.load_plugins(policy_config.plugins, registry, event_bus=event_bus)
         logger.info("Loaded %d plugin(s)", len(policy_config.plugins))
 
     # --- Analytics hook (optional, requires collector) ---
@@ -218,8 +220,11 @@ def _build_pipeline(
 
     # --- Audit hook (always registered when pipeline exists) ---
     logging_config = policy_config.logging if policy_config else None
-    audit_hook = AuditHook(logging_config=logging_config)
+    audit_hook = AuditHook(logging_config=logging_config, event_bus=event_bus)
     registry.register(audit_hook, priority=150)
+
+    if event_bus.handler_count > 0:
+        logger.info("Event bus active with %d handler(s)", event_bus.handler_count)
 
     # Only build the pipeline if at least one functional hook was registered
     if not identity_enabled and policy_config is None:
