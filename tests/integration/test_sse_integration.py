@@ -21,6 +21,7 @@ import sys
 from pathlib import Path
 from unittest.mock import AsyncMock
 
+import httpx
 import pytest
 import pytest_asyncio
 
@@ -73,18 +74,19 @@ async def _start_sse_server(port: int) -> asyncio.subprocess.Process:
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    # Wait for the server to start accepting connections
-    for _ in range(50):  # up to 5 seconds
-        await asyncio.sleep(0.1)
-        try:
-            _, writer = await asyncio.open_connection("127.0.0.1", port)
-            writer.close()
-            await writer.wait_closed()
-            # Give the ASGI app a moment to fully initialize routes
-            await asyncio.sleep(0.3)
-            return proc
-        except (ConnectionRefusedError, OSError):
-            continue
+    # Wait for the server to be fully ready using an HTTP health check.
+    # A plain TCP connect is not sufficient — the ASGI app may not have
+    # finished mounting its routes yet, leading to flaky SSE failures on CI.
+    url = f"http://127.0.0.1:{port}/health"
+    async with httpx.AsyncClient() as client:
+        for _ in range(100):  # up to 10 seconds
+            await asyncio.sleep(0.1)
+            try:
+                resp = await client.get(url, timeout=2.0)
+                if resp.status_code == 200:
+                    return proc
+            except (httpx.ConnectError, httpx.ReadError, OSError):
+                continue
     raise RuntimeError(f"SSE test server failed to start on port {port}")
 
 
