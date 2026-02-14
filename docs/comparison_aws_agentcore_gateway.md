@@ -48,11 +48,11 @@
 - AgentCore Policy is more expressive (Cedar) and offers advanced features like NL-to-policy generation, but adds AWS service dependency and Cedar learning curve.
 
 ### 4) Data protection and masking
-- **mcp-zero:** built-in inline Presidio masking for PII and secrets on both request inputs and response outputs within the HTTP gateway data path (stdio connections bypass masking).[^2]
+- **mcp-zero:** built-in inline Presidio masking for PII and secrets on both request inputs and response outputs within the gateway data path (enforced on both HTTP and stdio transports).[^2]
 - **AWS AgentCore Gateway:** PII masking is handled at the observability layer (CloudWatch data protection policies) rather than inline in the MCP data path. Content filtering is available separately via Bedrock Guardrails.
 
 **Implication**
-- `mcp-zero` masks data in-flight on HTTP traffic before it reaches downstream MCP servers, which is often required in regulated environments.
+- `mcp-zero` masks data in-flight before it reaches downstream MCP servers, which is often required in regulated environments.
 - AgentCore Gateway's masking operates on logs after the fact; inline content filtering requires configuring Bedrock Guardrails as a separate service.
 
 ### 5) Auditing and observability
@@ -101,7 +101,7 @@
 
 ### Prefer mcp-zero when
 1. You need a cloud-agnostic, self-hosted MCP gateway without vendor lock-in.
-2. You require inline PII/secret masking in the HTTP data path (not just in logs; note: stdio bypasses masking).[^2]
+2. You require inline PII/secret masking in the gateway data path (not just in logs; enforced on both HTTP and stdio).[^2]
 3. You want simple, file-based policy artifacts that compliance teams can directly review.
 4. You need lightweight deployment without consumption-based pricing.
 
@@ -124,7 +124,7 @@
 
 [^1]: **OBO token exchange configuration**: OBO token exchange is implemented but requires explicit configuration: (1) set `OKTA_TOKEN_ENDPOINT`, `OKTA_CLIENT_ID`, and `OKTA_CLIENT_SECRET` environment variables, and (2) enable OBO per-server in the policy file with `obo.enabled: true`, `obo.target_audience`, and `obo.scopes`.
 
-[^2]: **stdio transport limitation**: mcp-zero supports stdio connections for gateway-spawned MCP server processes, but governance policy evaluation and Presidio masking are **only enforced on HTTP/Streamable HTTP** traffic. stdio connections bypass the governance and masking pipeline.
+[^2]: **Unified transport enforcement**: Both HTTP and stdio transports enforce the same governance, masking, and audit policies through a unified pipeline. Previous versions of this document incorrectly stated that stdio bypassed these controls; this was corrected following integration test validation in PR #101.
 
 ---
 
