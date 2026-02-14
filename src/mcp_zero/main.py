@@ -380,8 +380,20 @@ def run() -> None:
     # Build OBO auth provider when Okta OBO env vars are set
     auth_provider = _build_obo_provider(configs)
 
+    # Build policy engine for tool-listing authorization (F-06)
+    policy_engine = PolicyEngine(policy_config) if policy_config else None
+    identity_enabled = identity_config is not None or (
+        bool(os.environ.get("OKTA_ISSUER", "")) and bool(os.environ.get("OKTA_AUDIENCE", ""))
+    )
+
     server_manager = ServerManager(configs)
-    proxy_server = ProxyServer(server_manager, pipeline=pipeline, auth_provider=auth_provider)
+    proxy_server = ProxyServer(
+        server_manager,
+        pipeline=pipeline,
+        auth_provider=auth_provider,
+        policy_engine=policy_engine,
+        identity_required=identity_enabled,
+    )
     app = create_app(proxy_server, server_manager, analytics_collector=analytics_collector)
 
     host = os.environ.get("MCP_HOST", "0.0.0.0")

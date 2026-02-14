@@ -10,8 +10,12 @@ import mcp.types as types
 from mcp.server.lowlevel import Server
 
 from mcp_zero.context import HookContext, PolicyDecision, RequestContext
+from mcp_zero.governance.config import PolicyEffect
+from mcp_zero.governance.engine import PolicyEngine, PolicyInput
 from mcp_zero.identity.errors import TokenExchangeError
 from mcp_zero.pipeline import Pipeline
+from mcp_zero.pipeline.errors import HookError, ShortCircuitError
+from mcp_zero.pipeline.hooks import HookPoint
 from mcp_zero.proxy.auth import AuthProvider, NoAuthProvider
 from mcp_zero.proxy.errors import ProxyTimeoutError, UpstreamError
 from mcp_zero.proxy.middleware import auth_header_var
@@ -34,10 +38,14 @@ class ProxyServer:
         *,
         pipeline: Pipeline | None = None,
         auth_provider: AuthProvider | None = None,
+        policy_engine: PolicyEngine | None = None,
+        identity_required: bool = False,
     ) -> None:
         self._server_manager = server_manager
         self._pipeline = pipeline
         self._auth_provider = auth_provider or NoAuthProvider()
+        self._policy_engine = policy_engine
+        self._identity_required = identity_required
 
         self._mcp_server = Server("mcp-zero-proxy")
         self._register_handlers()
@@ -59,7 +67,43 @@ class ProxyServer:
             return await self._call_tool(name, arguments)
 
     async def _list_tools(self) -> list[types.Tool]:
-        """Query all upstream servers and aggregate their tools with namespace prefixes."""
+        """Query all upstream servers and aggregate their tools with namespace prefixes.
+
+        When a pipeline is configured, identity validation runs first.  If a
+        policy engine is available, only tools the caller is authorized to
+        invoke are returned.
+        """
+        # --- Step 1: Authenticate the caller (if pipeline configured) ---
+        identity = None
+        if self._pipeline:
+            hook_ctx = HookContext(
+                request=RequestContext(),
+                server_name="",
+                tool_name="",
+                extras={"authorization": auth_header_var.get("")},
+            )
+            try:
+                hook_ctx = await self._pipeline.execute_hook_point(
+                    HookPoint.PRE_VALIDATION, hook_ctx
+                )
+                identity = hook_ctx.request.identity
+            except (ShortCircuitError, HookError):
+                logger.warning("Tool listing denied: authentication failed")
+                return []
+
+        # --- Step 2: Fetch tools from all upstream servers ---
+        all_tools = await self._fetch_all_tools()
+
+        # --- Step 3: Filter by policy (if engine configured) ---
+        if self._policy_engine is not None:
+            user_id = identity.user_id if identity else "anonymous"
+            groups = list(identity.groups) if identity else []
+            all_tools = self._filter_tools_by_policy(all_tools, user_id, groups)
+
+        return all_tools
+
+    async def _fetch_all_tools(self) -> list[types.Tool]:
+        """Fetch and namespace tools from all upstream servers."""
 
         async def _fetch_tools(server_name: str) -> list[types.Tool]:
             config = self._server_manager.get_config(server_name)
@@ -90,6 +134,46 @@ class ProxyServer:
         for tools in results:
             all_tools.extend(tools)
         return all_tools
+
+    def _filter_tools_by_policy(
+        self,
+        tools: list[types.Tool],
+        user_id: str,
+        groups: list[str],
+    ) -> list[types.Tool]:
+        """Return only tools the caller is authorized to invoke."""
+        allowed: list[types.Tool] = []
+        for tool in tools:
+            # Namespaced tool names use "server__tool" format
+            parts = tool.name.split("__", 1)
+            if len(parts) != 2:
+                continue
+            server_name, tool_name = parts
+
+            policy_input = PolicyInput(
+                user_id=user_id,
+                groups=groups,
+                mcp_server=server_name,
+                tool=tool_name,
+            )
+            result = self._policy_engine.evaluate(policy_input)
+            if result.effect == PolicyEffect.ALLOW:
+                allowed.append(tool)
+            else:
+                logger.debug(
+                    "Tool '%s' filtered from listing for user=%s (policy_id=%s)",
+                    tool.name,
+                    user_id,
+                    result.policy_id or "default",
+                )
+
+        logger.debug(
+            "Tool listing filtered: %d/%d tools visible for user=%s",
+            len(allowed),
+            len(tools),
+            user_id,
+        )
+        return allowed
 
     async def _call_tool(
         self, namespaced_name: str, arguments: dict[str, Any] | None
