@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.metadata
 import logging
 
+from mcp_zero.events.bus import EventBus
 from mcp_zero.governance.config import PluginDeclaration
 from mcp_zero.pipeline.registry import HookRegistry
 from mcp_zero.plugin import Plugin
@@ -47,12 +48,18 @@ class PluginManager:
         """Return sorted list of discovered entry-point names."""
         return sorted(self._available)
 
-    def load_plugins(self, declarations: list[PluginDeclaration], registry: HookRegistry) -> None:
+    def load_plugins(
+        self,
+        declarations: list[PluginDeclaration],
+        registry: HookRegistry,
+        event_bus: EventBus | None = None,
+    ) -> None:
         """Load, configure, and register plugins from policy declarations.
 
         Args:
             declarations: Plugin declarations from the policy file.
             registry: Hook registry for plugins to register their hooks.
+            event_bus: Optional event bus for plugins to register event handlers.
 
         Raises:
             PluginLoadError: If any plugin fails to load or configure.
@@ -60,6 +67,8 @@ class PluginManager:
         for decl in declarations:
             plugin = self._load_one(decl.name, decl.package, decl.config)
             plugin.register(registry)
+            if event_bus is not None and hasattr(plugin, "register_event_handlers"):
+                plugin.register_event_handlers(event_bus)
             self._plugins.append(plugin)
             logger.info("Plugin '%s' loaded and registered", decl.name)
 
