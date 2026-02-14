@@ -1,14 +1,24 @@
 """Tests for proxy server."""
 
 import asyncio
+from dataclasses import replace
 from unittest.mock import AsyncMock
 
 import pytest
 from mcp.types import CallToolResult, ListToolsResult, TextContent, Tool
 
 from mcp_zero.context import HookContext, PolicyDecision, RequestContext, UserIdentity
+from mcp_zero.governance.config import (
+    PolicyConfig,
+    PolicyEffect,
+    PolicyRule,
+    PolicyServerAccess,
+    PolicySubjects,
+)
+from mcp_zero.governance.engine import PolicyEngine
 from mcp_zero.identity.errors import TokenExchangeError
 from mcp_zero.pipeline import Pipeline, PipelineResult
+from mcp_zero.pipeline.errors import ShortCircuitError
 from mcp_zero.proxy.auth import AuthProvider
 from mcp_zero.proxy.errors import RoutingError, UpstreamError
 from mcp_zero.proxy.proxy_server import ProxyServer
@@ -531,3 +541,136 @@ class TestProxyServerWithAuth:
         assert "HTTP 401" not in result[0].text
         assert "invalid_grant" not in result[0].text
         assert "api://weather" not in result[0].text
+
+
+class TestProxyServerListToolsAuth:
+    """Tests for tool listing with identity validation and policy filtering (F-06)."""
+
+    def _setup_server_manager(self):
+        mgr = ServerManager(make_configs())
+        mock_session_w = AsyncMock()
+        mock_session_w.list_tools = AsyncMock(
+            return_value=ListToolsResult(tools=[make_tool("get_weather")])
+        )
+        mock_session_d = AsyncMock()
+        mock_session_d.list_tools = AsyncMock(
+            return_value=ListToolsResult(tools=[make_tool("query")])
+        )
+        sessions = {"weather": mock_session_w, "db": mock_session_d}
+
+        async def fake_get_session(name, ctx=None, **kwargs):
+            return sessions[name]
+
+        mgr.get_session = AsyncMock(side_effect=fake_get_session)
+        return mgr
+
+    def _make_policy_engine(self, allowed_servers=None):
+        """Create a policy engine that allows specific servers."""
+        rules = []
+        if allowed_servers:
+            rules.append(
+                PolicyRule(
+                    id="allow-specific",
+                    description="Allow access to specific servers",
+                    effect=PolicyEffect.ALLOW,
+                    subjects=PolicySubjects(),
+                    mcp_servers=[PolicyServerAccess(name=s) for s in allowed_servers],
+                )
+            )
+        return PolicyEngine(PolicyConfig(version=1, default="deny", policies=rules))
+
+    @pytest.mark.asyncio
+    async def test_auth_failure_returns_empty_list(self):
+        """When identity validation fails, no tools are returned."""
+        mgr = self._setup_server_manager()
+
+        mock_pipeline = AsyncMock(spec=Pipeline)
+        mock_pipeline.execute_hook_point = AsyncMock(
+            side_effect=ShortCircuitError("Missing Authorization header", deny=True)
+        )
+
+        proxy = ProxyServer(mgr, pipeline=mock_pipeline)
+        tools = await proxy._list_tools()
+
+        assert tools == []
+        # Should not have queried upstream servers
+        mgr.get_session.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_policy_filters_tools(self):
+        """Only tools the caller is authorized to invoke are returned."""
+        mgr = self._setup_server_manager()
+        engine = self._make_policy_engine(allowed_servers=["weather"])
+
+        proxy = ProxyServer(mgr, policy_engine=engine)
+        tools = await proxy._list_tools()
+
+        assert len(tools) == 1
+        assert tools[0].name == "weather__get_weather"
+
+    @pytest.mark.asyncio
+    async def test_policy_denies_all_returns_empty(self):
+        """Default-deny policy with no matching rules returns no tools."""
+        mgr = self._setup_server_manager()
+        engine = self._make_policy_engine(allowed_servers=[])
+
+        proxy = ProxyServer(mgr, policy_engine=engine)
+        tools = await proxy._list_tools()
+
+        assert tools == []
+
+    @pytest.mark.asyncio
+    async def test_policy_allows_all_returns_all(self):
+        """Policy allowing all servers returns all tools."""
+        mgr = self._setup_server_manager()
+        engine = self._make_policy_engine(allowed_servers=["*"])
+
+        proxy = ProxyServer(mgr, policy_engine=engine)
+        tools = await proxy._list_tools()
+
+        assert len(tools) == 2
+
+    @pytest.mark.asyncio
+    async def test_identity_used_for_policy_evaluation(self):
+        """Authenticated identity is used for policy evaluation."""
+        mgr = self._setup_server_manager()
+
+        # Policy allows only user "admin" to access weather
+        policy = PolicyConfig(
+            version=1,
+            default="deny",
+            policies=[
+                PolicyRule(
+                    id="admin-weather",
+                    description="Allow admin to access weather server",
+                    effect=PolicyEffect.ALLOW,
+                    subjects=PolicySubjects(users=["admin"]),
+                    mcp_servers=[PolicyServerAccess(name="weather")],
+                ),
+            ],
+        )
+        engine = PolicyEngine(policy)
+
+        # Pipeline enriches context with admin identity
+        enriched_identity = UserIdentity(user_id="admin")
+
+        async def fake_execute_hook_point(point, ctx):
+            return ctx.evolve(request=replace(ctx.request, identity=enriched_identity))
+
+        mock_pipeline = AsyncMock(spec=Pipeline)
+        mock_pipeline.execute_hook_point = AsyncMock(side_effect=fake_execute_hook_point)
+
+        proxy = ProxyServer(mgr, pipeline=mock_pipeline, policy_engine=engine)
+        tools = await proxy._list_tools()
+
+        assert len(tools) == 1
+        assert tools[0].name == "weather__get_weather"
+
+    @pytest.mark.asyncio
+    async def test_no_pipeline_no_engine_returns_all(self):
+        """Without pipeline or engine, all tools are returned (legacy behavior)."""
+        mgr = self._setup_server_manager()
+        proxy = ProxyServer(mgr)
+        tools = await proxy._list_tools()
+
+        assert len(tools) == 2
