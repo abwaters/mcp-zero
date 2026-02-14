@@ -9,6 +9,7 @@ from mcp_zero.governance.config import PluginDeclaration, PolicyConfig
 from mcp_zero.governance.errors import PolicyFileError
 from mcp_zero.identity.config import IdentityConfig
 from mcp_zero.main import (
+    _build_obo_provider,
     _build_pipeline,
     _is_insecure_allowed,
     _load_policy_and_configs,
@@ -19,6 +20,7 @@ from mcp_zero.pipeline import Pipeline
 from mcp_zero.plugin import BasePlugin
 from mcp_zero.plugin_manager import PluginLoadError, PluginManager
 from mcp_zero.proxy.middleware import AuthHeaderMiddleware
+from mcp_zero.transport.config import ServerConfig, TransportType
 
 
 class TestIsInsecureAllowed:
@@ -284,3 +286,57 @@ class TestRun:
         run()
 
         mock_uvicorn.run.assert_called_once()
+
+
+class TestBuildOBOProviderValidation:
+    def _obo_server_config(self, name="weather"):
+        return ServerConfig(
+            name=name,
+            transport=TransportType.HTTP,
+            url="https://weather:8080",
+            token_exchange=True,
+            target_audience="api://weather",
+        )
+
+    def test_refuses_obo_without_identity(self, monkeypatch):
+        """OBO servers without identity pipeline should fail-closed."""
+        monkeypatch.delenv("MCP_ALLOW_INSECURE", raising=False)
+        monkeypatch.setenv("OKTA_TOKEN_ENDPOINT", "https://okta/token")
+        monkeypatch.setenv("OKTA_CLIENT_ID", "client-id")
+        monkeypatch.setenv("OKTA_CLIENT_SECRET", "secret")
+
+        with pytest.raises(SystemExit) as exc_info:
+            _build_obo_provider([self._obo_server_config()], identity_enabled=False)
+        assert exc_info.value.code == 78
+
+    def test_allows_obo_without_identity_when_insecure(self, monkeypatch):
+        """OBO servers without identity allowed when MCP_ALLOW_INSECURE is set."""
+        monkeypatch.setenv("MCP_ALLOW_INSECURE", "true")
+        monkeypatch.setenv("OKTA_TOKEN_ENDPOINT", "https://okta/token")
+        monkeypatch.setenv("OKTA_CLIENT_ID", "client-id")
+        monkeypatch.setenv("OKTA_CLIENT_SECRET", "secret")
+
+        # Should not raise — returns the provider
+        result = _build_obo_provider([self._obo_server_config()], identity_enabled=False)
+        assert result is not None
+
+    def test_obo_with_identity_enabled(self, monkeypatch):
+        """OBO servers with identity pipeline should work normally."""
+        monkeypatch.delenv("MCP_ALLOW_INSECURE", raising=False)
+        monkeypatch.setenv("OKTA_TOKEN_ENDPOINT", "https://okta/token")
+        monkeypatch.setenv("OKTA_CLIENT_ID", "client-id")
+        monkeypatch.setenv("OKTA_CLIENT_SECRET", "secret")
+
+        result = _build_obo_provider([self._obo_server_config()], identity_enabled=True)
+        assert result is not None
+
+    def test_no_obo_servers_skips_validation(self, monkeypatch):
+        """Non-OBO servers should not trigger identity validation."""
+        monkeypatch.delenv("MCP_ALLOW_INSECURE", raising=False)
+        config = ServerConfig(
+            name="api",
+            transport=TransportType.HTTP,
+            url="https://api:8080",
+        )
+        result = _build_obo_provider([config], identity_enabled=False)
+        assert result is None

@@ -235,19 +235,48 @@ def _build_pipeline(
     return Pipeline(registry), plugin_manager
 
 
-def _build_obo_provider(configs: list[ServerConfig]) -> AuthProvider | None:
+def _build_obo_provider(
+    configs: list[ServerConfig],
+    *,
+    identity_enabled: bool = True,
+) -> AuthProvider | None:
     """Build an OBOAuthProvider when Okta OBO env vars are set.
 
     Reads ``OKTA_TOKEN_ENDPOINT``, ``OKTA_CLIENT_ID``, and ``OKTA_CLIENT_SECRET``.
     Returns ``None`` if any are missing or no servers have ``token_exchange`` enabled.
+
+    Raises:
+        SystemExit: If servers require OBO but identity pipeline is disabled
+            and ``MCP_ALLOW_INSECURE`` is not set.
     """
     token_endpoint = os.environ.get("OKTA_TOKEN_ENDPOINT", "")
     client_id = os.environ.get("OKTA_CLIENT_ID", "")
     client_secret = os.environ.get("OKTA_CLIENT_SECRET", "")
 
+    obo_servers = [c.name for c in configs if c.token_exchange]
+
+    # Validate that OBO-enabled servers have a functioning identity pipeline
+    if obo_servers and not identity_enabled:
+        if not _is_insecure_allowed():
+            logger.critical(
+                "REFUSING TO START: Server(s) %s have token_exchange enabled but the "
+                "identity pipeline is disabled. OBO token exchange requires authenticated "
+                "user tokens — without identity validation, OBO will always fail. "
+                "Configure identity (OKTA_ISSUER + OKTA_AUDIENCE or policy identity "
+                "section), or set MCP_ALLOW_INSECURE=true (dev only).",
+                obo_servers,
+            )
+            sys.exit(78)
+        else:
+            logger.warning(
+                "Server(s) %s have token_exchange enabled but identity pipeline is "
+                "disabled. OBO exchanges will fail at runtime for these servers.",
+                obo_servers,
+            )
+
     if not all([token_endpoint, client_id, client_secret]):
         # Check if any server actually needs OBO
-        if any(c.token_exchange for c in configs):
+        if obo_servers:
             logger.warning(
                 "Server(s) have token_exchange enabled but OKTA_TOKEN_ENDPOINT, "
                 "OKTA_CLIENT_ID, or OKTA_CLIENT_SECRET not set — OBO disabled"
@@ -349,8 +378,12 @@ def run() -> None:
                 "Do NOT use this in production."
             )
 
-    # Build OBO auth provider when Okta OBO env vars are set
-    auth_provider = _build_obo_provider(configs)
+    # Build OBO auth provider when Okta OBO env vars are set.
+    # Identity can be configured via policy file OR env vars (OKTA_ISSUER + OKTA_AUDIENCE).
+    identity_active = identity_config is not None or (
+        bool(os.environ.get("OKTA_ISSUER", "")) and bool(os.environ.get("OKTA_AUDIENCE", ""))
+    )
+    auth_provider = _build_obo_provider(configs, identity_enabled=identity_active)
 
     server_manager = ServerManager(configs)
     proxy_server = ProxyServer(server_manager, pipeline=pipeline, auth_provider=auth_provider)

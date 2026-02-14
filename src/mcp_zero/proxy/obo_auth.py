@@ -6,6 +6,7 @@ import logging
 from dataclasses import dataclass
 
 from mcp_zero.context import RequestContext
+from mcp_zero.identity.errors import TokenExchangeError
 from mcp_zero.identity.obo import OBOClient
 from mcp_zero.proxy.auth import AuthProvider
 
@@ -39,12 +40,28 @@ class OBOAuthProvider(AuthProvider):
             return None
 
         if not context.raw_token:
-            logger.debug("No raw_token on context for server '%s', skipping OBO", server_name)
-            return None
+            logger.warning(
+                "OBO exchange required for server '%s' but no raw_token on context — "
+                "identity pipeline may be disabled or misconfigured",
+                server_name,
+            )
+            raise TokenExchangeError(
+                f"OBO exchange required for server '{server_name}' but no authenticated "
+                f"token available (identity pipeline may be disabled or misconfigured)",
+                audience=settings.target_audience,
+            )
 
         if not context.identity:
-            logger.debug("No identity on context for server '%s', skipping OBO", server_name)
-            return None
+            logger.warning(
+                "OBO exchange required for server '%s' but no identity on context — "
+                "identity pipeline may be disabled or misconfigured",
+                server_name,
+            )
+            raise TokenExchangeError(
+                f"OBO exchange required for server '{server_name}' but no authenticated "
+                f"identity available (identity pipeline may be disabled or misconfigured)",
+                audience=settings.target_audience,
+            )
 
         return await self._obo_client.exchange_token(
             subject_token=context.raw_token,
