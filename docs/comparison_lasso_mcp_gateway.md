@@ -23,19 +23,19 @@
 ## Feature and use-case comparison
 
 ### 1) Access control and governance depth
-- **mcp-zero:** governance is first-class and deterministic (deny-by-default, explicit allow/deny rules, user/group/tool scoping; enforced on HTTP traffic only).[^1]
+- **mcp-zero:** governance is first-class and deterministic (deny-by-default, explicit allow/deny rules, user/group/tool scoping; enforced on both HTTP and stdio transports).[^1]
 - **Lasso:** focuses on an intermediary control layer with plugin-based capabilities, including security scanning and sensitive data sanitization.
 
 **Where each excels**
-- `mcp-zero`: governance-heavy enterprise environments with auditable authorization semantics on HTTP traffic.
+- `mcp-zero`: governance-heavy enterprise environments with auditable authorization semantics on both HTTP and stdio transports.
 - `lasso mcp gateway`: teams that want quick-to-extend controls via plugins and straightforward client integration.
 
 ### 2) Security controls
-- **mcp-zero:** built-in identity validation with optional OBO token exchange[^2], policy enforcement (HTTP only)[^1], PII/secret masking (HTTP only)[^1], and structured auditing pipeline.
+- **mcp-zero:** built-in identity validation with optional OBO token exchange[^2], policy enforcement (both HTTP and stdio)[^1], PII/secret masking (both HTTP and stdio)[^1], and structured auditing pipeline.
 - **Lasso:** explicitly advertises security risk scanning before loading MCP servers plus guardrail plugins (e.g., masking and tracing plugin examples).
 
 **Trade-off**
-- `mcp-zero` offers a more prescriptive, governance-oriented structure for HTTP traffic.
+- `mcp-zero` offers a more prescriptive, governance-oriented structure across all transports.
 - `Lasso` offers a flexible plugin-centric path with potentially faster experimentation.
 
 ### 3) Developer experience and integration model
@@ -91,7 +91,7 @@
 
 ## Implementation Notes
 
-[^1]: **stdio transport limitation**: mcp-zero supports stdio connections for gateway-spawned MCP server processes, but governance policy evaluation and Presidio masking are **only enforced on HTTP/Streamable HTTP** traffic. stdio connections bypass the governance and masking pipeline.
+[^1]: **Unified transport enforcement**: Both HTTP and stdio transports enforce the same governance, masking, and audit policies through a unified pipeline. Previous versions of this document incorrectly stated that stdio bypassed these controls; this was corrected following integration test validation in PR #101.
 
 [^2]: **OBO token exchange configuration**: OBO token exchange is implemented but requires explicit configuration: (1) set `OKTA_TOKEN_ENDPOINT`, `OKTA_CLIENT_ID`, and `OKTA_CLIENT_SECRET` environment variables, and (2) enable OBO per-server in the policy file with `obo.enabled: true`, `obo.target_audience`, and `obo.scopes`.
 

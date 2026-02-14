@@ -57,19 +57,21 @@ CI will reject PRs that fail `ruff format --check`. Do not skip this step.
 
 ## Important Implementation Notes
 
-- **Fail-closed by default**: Gateway refuses to start without `MCP_POLICY_FILE` unless `MCP_ALLOW_INSECURE=true` is set
-- **OBO status**: OBO token exchange infrastructure exists in code but is not invoked in the request flow
-- **Presidio**: Masking is hardcoded to Presidio, not yet plugin-based (plugin architecture is planned)
+- **Fail-closed design goal**: Gateway is designed to enforce security by default, but without a policy file it runs in legacy mode with no enforcement (see security review F-03 for details). Set `MCP_POLICY_FILE` to enable governance/identity/masking.
+- **OBO status**: OBO token exchange is FULLY IMPLEMENTED and operational. Requires explicit environment variables (`OKTA_TOKEN_ENDPOINT`, `OKTA_CLIENT_ID`, `OKTA_CLIENT_SECRET`) and per-server `token_exchange: true` configuration.
+- **Presidio**: Masking uses Presidio as a built-in plugin (loaded via entry point), but Presidio is not yet extracted to a separate installable package
+- **Plugin architecture**: FULLY IMPLEMENTED (entry point discovery, lifecycle management, hook registration). See `src/mcp_zero/plugin_manager.py` and `docs/plugin-architecture-design.md`
 
 ## Architecture
 
 The gateway sits between enterprise AI tools and MCP servers:
 
-- **Identity**: Okta OAuth2 JWT validation (OBO token exchange infrastructure exists but not yet invoked in request flow)
+- **Identity**: Okta OAuth2 JWT validation with OBO token exchange (requires explicit configuration, see docs/okta_obo_for_an_enterprise_mcp_gateway.md)
 - **Governance**: Static YAML/JSON policy files, default-deny, server/tool/user/group-level controls
-- **Data protection**: Inline Presidio masking (hardcoded, not plugin-based yet) for PII and secrets on inputs and outputs
+- **Data protection**: Inline Presidio masking (built-in plugin) for PII and secrets on inputs and outputs
 - **Auditing**: Structured logs with user attribution, correlation IDs, policy decisions
 - **Transports**: Streamable HTTP and stdio (both enforce full pipeline when configured)
+- **Plugins**: Entry-point based plugin system for extending the pipeline with custom hooks (masking, metrics, etc.)
 
 Both HTTP and stdio transports enforce governance, masking, and auditing through the same unified pipeline when configured.
 

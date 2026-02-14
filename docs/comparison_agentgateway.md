@@ -41,7 +41,7 @@
 - `agentgateway`: platform teams that need broader authorization composition across many tenants/environments.
 
 ### 3) Data protection and content controls
-- **mcp-zero:** first-class Presidio masking pipeline for PII/secrets on HTTP traffic (very explicit and practical for compliance narratives; stdio connections bypass masking).[^2]
+- **mcp-zero:** first-class Presidio masking pipeline for PII/secrets on both HTTP and stdio transports (very explicit and practical for compliance narratives).[^2]
 - **agentgateway:** stronger generalized transformation/policy capability, but not as singularly centered on Presidio-style masking defaults.
 
 ### 4) Operational model
@@ -95,7 +95,7 @@
 
 [^1]: **OBO token exchange configuration**: OBO token exchange is implemented but requires explicit configuration: (1) set `OKTA_TOKEN_ENDPOINT`, `OKTA_CLIENT_ID`, and `OKTA_CLIENT_SECRET` environment variables, and (2) enable OBO per-server in the policy file with `obo.enabled: true`, `obo.target_audience`, and `obo.scopes`.
 
-[^2]: **stdio transport limitation**: mcp-zero supports stdio connections for gateway-spawned MCP server processes, but governance policy evaluation and Presidio masking are **only enforced on HTTP/Streamable HTTP** traffic. stdio connections bypass the governance and masking pipeline.
+[^2]: **Unified transport enforcement**: Both HTTP and stdio transports enforce the same governance, masking, and audit policies through a unified pipeline. Previous versions of this document incorrectly stated that stdio bypassed these controls; this was corrected following integration test validation in PR #101.
 
 ---
 

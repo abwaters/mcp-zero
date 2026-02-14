@@ -613,6 +613,8 @@ plugins:
 
 ### Phase 2: Extract Presidio Plugin
 
+**STATUS**: ⚠️ **PARTIALLY IMPLEMENTED** — Presidio is now a built-in plugin at `src/mcp_zero/plugins/presidio_masking.py` and registered via entry point, but it has NOT been extracted to a separate installable package. The following steps remain:
+
 1. Create `mcp-zero-presidio/` package alongside the main repo (or as subdirectory
    under `plugins/`)
 2. Move `masking/presidio.py` → `mcp_zero_presidio/engine.py`
@@ -623,7 +625,11 @@ plugins:
 7. Add integration tests for the plugin package
 8. Update documentation
 
+**Current state**: Presidio masking is a built-in plugin loaded via entry point `mcp_zero.plugins:presidio-masking`, but remains in the core `mcp_zero` package with Presidio dependencies bundled in `pyproject.toml`.
+
 ### Phase 3: Example Plugins (optional, validates the architecture)
+
+**STATUS**: ❌ **NOT IMPLEMENTED** — No example plugins have been created. Planned examples:
 
 1. Rate-limiting plugin (validates pre-governance hook slot)
 2. OpenTelemetry metrics plugin (validates general hook slot)

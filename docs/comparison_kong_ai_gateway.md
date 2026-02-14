@@ -31,12 +31,12 @@
 - `Kong AI Gateway`: organizations that already run Kong for API management and want to extend it to govern MCP and LLM traffic in a single platform.
 
 ### 2) MCP protocol handling
-- **mcp-zero:** MCP proxying for Streamable HTTP (with full governance pipeline) and stdio transports (connection only — governance/masking apply only to HTTP).[^1]
+- **mcp-zero:** MCP proxying for Streamable HTTP and stdio transports (both enforce full governance pipeline through unified enforcement).[^1]
 - **Kong AI Gateway:** AI MCP Proxy plugin bridges MCP and HTTP, supporting three modes — proxying MCP requests to upstream MCP servers, converting REST APIs into MCP tools, and exposing grouped tools as an MCP server. Auto-generation of MCP servers from existing REST APIs via Kong's MCP server generation capability.
 
 **Trade-off**
 - Kong's REST-to-MCP auto-generation is powerful for organizations with large existing API estates.
-- `mcp-zero`'s stdio transport support covers gateway-spawned server scenarios that Kong's HTTP-oriented model does not natively address, but stdio connections bypass governance enforcement.
+- `mcp-zero`'s stdio transport support covers gateway-spawned server scenarios that Kong's HTTP-oriented model does not natively address.
 
 ### 3) Identity and authentication
 - **mcp-zero:** Okta OAuth2 JWT validation with optional on-behalf-of (OBO) token exchange for downstream MCP servers (requires OKTA_TOKEN_ENDPOINT + per-server policy config)[^2]; identity claims mapped through the gateway.
@@ -55,11 +55,11 @@
 - Kong's ACL model integrates with its existing consumer/consumer-group abstractions, which is natural for teams already using Kong but adds conceptual overhead for MCP-only deployments.
 
 ### 5) Data protection and masking
-- **mcp-zero:** built-in inline Presidio masking for PII and secrets on both request inputs and response outputs within the HTTP gateway data path (stdio connections bypass masking).[^1]
+- **mcp-zero:** built-in inline Presidio masking for PII and secrets on both request inputs and response outputs within the gateway data path (enforced on both HTTP and stdio transports).[^1]
 - **Kong AI Gateway:** AI PII Sanitizer plugin (Enterprise only) integrates with an external PII service, supporting 20+ PII categories across 12 languages. Offers replace-with-placeholder and synthetic-replacement modes, plus optional re-insertion of original data in responses. Runs in a self-hosted container for compliance.
 
 **Trade-off**
-- `mcp-zero`'s masking is built-in for HTTP traffic and requires no external service dependency.
+- `mcp-zero`'s masking is built-in and requires no external service dependency.
 - Kong's PII Sanitizer is more feature-rich (language coverage, synthetic replacement, reversible masking) but requires Enterprise license and an external PII service container.
 
 ### 6) Observability and auditing
@@ -108,9 +108,9 @@
 
 ### Prefer mcp-zero when
 1. You need a focused MCP governance gateway without the overhead of a full API gateway platform.
-2. You require built-in inline PII masking (on HTTP traffic) without external service dependencies or Enterprise licensing.
+2. You require built-in inline PII masking (on both HTTP and stdio transports) without external service dependencies or Enterprise licensing.
 3. You want simple, file-based policy artifacts that compliance teams can directly review.
-4. You need stdio transport support for gateway-spawned MCP servers (note: stdio bypasses governance/masking).[^1]
+4. You need stdio transport support for gateway-spawned MCP servers with full governance enforcement.[^1]
 
 ### Prefer Kong AI Gateway when
 1. You already run Kong for API management and want to extend governance to MCP and LLM traffic.
@@ -130,7 +130,7 @@
 
 ## Implementation Notes
 
-[^1]: **stdio transport limitation**: mcp-zero supports stdio connections for gateway-spawned MCP server processes, but governance policy evaluation and Presidio masking are **only enforced on HTTP/Streamable HTTP** traffic. stdio connections bypass the governance and masking pipeline.
+[^1]: **Unified transport enforcement**: Both HTTP and stdio transports enforce the same governance, masking, and audit policies through a unified pipeline. Previous versions of this document incorrectly stated that stdio bypassed these controls; this was corrected following integration test validation in PR #101.
 
 [^2]: **OBO token exchange configuration**: OBO token exchange is implemented but requires explicit configuration: (1) set `OKTA_TOKEN_ENDPOINT`, `OKTA_CLIENT_ID`, and `OKTA_CLIENT_SECRET` environment variables, and (2) enable OBO per-server in the policy file with `obo.enabled: true`, `obo.target_audience`, and `obo.scopes`.
 
