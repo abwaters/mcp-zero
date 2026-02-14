@@ -260,6 +260,7 @@ Hooks execute in priority order. Any hook can short-circuit the pipeline (e.g., 
 
 | Document | Description |
 |---|---|
+| [`docs/quickstart.md`](docs/quickstart.md) | Step-by-step quickstart with Docker Compose and local paths |
 | [`docs/prd.md`](docs/prd.md) | Product requirements and acceptance criteria |
 | [`docs/enterprise_mcp_gateway_architecture_diagram.md`](docs/enterprise_mcp_gateway_architecture_diagram.md) | Logical architecture with component diagram |
 | [`docs/enterprise_mcp_gateway_implementation_plan_epics.md`](docs/enterprise_mcp_gateway_implementation_plan_epics.md) | Phased implementation plan |
