@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable
 
+from mcp_zero.events.bus import EventBus
 from mcp_zero.pipeline.registry import HookRegistry
 
 
@@ -41,6 +42,17 @@ class BasePlugin:
 
     def register(self, registry: HookRegistry) -> None:
         pass
+
+    def register_event_handlers(self, bus: EventBus) -> None:
+        """Register event handlers with the event bus.
+
+        Override this to receive all core audit events (tool invocations,
+        policy decisions, masking events, errors) for logging, alerting,
+        or other observability needs.
+
+        This method is called after ``register()`` during plugin loading.
+        It is optional — plugins that don't need events can ignore it.
+        """
 
     def teardown(self) -> None:
         pass

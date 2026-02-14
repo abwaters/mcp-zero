@@ -1,5 +1,6 @@
 """Tests for Plugin protocol and BasePlugin."""
 
+from mcp_zero.events.bus import EventBus
 from mcp_zero.pipeline.registry import HookRegistry
 from mcp_zero.plugin import BasePlugin, Plugin
 
@@ -73,6 +74,12 @@ class TestBasePlugin:
         plugin = BasePlugin()
         registry = HookRegistry()
         plugin.register(registry)  # should not raise
+
+    def test_register_event_handlers_is_noop(self):
+        plugin = BasePlugin()
+        bus = EventBus()
+        plugin.register_event_handlers(bus)  # should not raise
+        assert bus.handler_count == 0
 
     def test_teardown_is_noop(self):
         plugin = BasePlugin()

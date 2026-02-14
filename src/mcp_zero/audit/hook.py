@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 
 from mcp_zero.audit.event import AuditEvent, AuditEventType, MaskingEventSummary, MaskingSummary
 from mcp_zero.context import HookContext
+from mcp_zero.events.bus import EventBus
 from mcp_zero.pipeline.hooks import LifecycleHook
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,10 @@ class AuditHook(LifecycleHook):
     to prevent unbounded memory growth in long-lived processes.  Oldest
     events are evicted first.  Set ``max_events=0`` to disable in-memory
     retention entirely (events are still logged as JSON).
+
+    When an ``event_bus`` is provided, every emitted event is also
+    dispatched to registered event handlers for external logging,
+    alerting, or other observability needs.
     """
 
     _DEFAULT_MAX_EVENTS = 1000
@@ -37,8 +42,10 @@ class AuditHook(LifecycleHook):
         logging_config: object | None = None,
         *,
         max_events: int = _DEFAULT_MAX_EVENTS,
+        event_bus: EventBus | None = None,
     ) -> None:
         self._events: deque[AuditEvent] = deque(maxlen=max_events or None)
+        self._event_bus = event_bus
         self._include: list[str] | None = None
         if logging_config is not None and hasattr(logging_config, "include"):
             inc = logging_config.include
@@ -52,12 +59,12 @@ class AuditHook(LifecycleHook):
 
     async def on_pre_audit(self, ctx: HookContext) -> HookContext:
         event = self._build_event(ctx, AuditEventType.TOOL_INVOCATION)
-        self._emit(event)
+        await self._emit(event)
 
         # Emit supplementary masking event when masking was applied
         if ctx.masking_applied or ctx.output_masking_applied:
             masking_event = self._build_event(ctx, AuditEventType.MASKING_EVENT)
-            self._emit(masking_event)
+            await self._emit(masking_event)
 
         return ctx
 
@@ -94,7 +101,7 @@ class AuditHook(LifecycleHook):
             request_size_bytes=event.request_size_bytes,
             response_size_bytes=event.response_size_bytes,
         )
-        self._emit(event)
+        await self._emit(event)
 
     def _build_event(self, ctx: HookContext, event_type: AuditEventType) -> AuditEvent:
         """Extract only metadata and masking summaries from context."""
@@ -198,7 +205,10 @@ class AuditHook(LifecycleHook):
             return 0
         return len(json.dumps(payload).encode())
 
-    def _emit(self, event: AuditEvent) -> None:
+    async def _emit(self, event: AuditEvent) -> None:
+        """Record event, log as JSON, and dispatch to event bus if present."""
         self._events.append(event)
         json_dict = event.to_json_dict(include=self._include or None)
         logger.info(json.dumps(json_dict, default=str))
+        if self._event_bus is not None:
+            await self._event_bus.emit(event)
