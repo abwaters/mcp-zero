@@ -97,7 +97,7 @@ class TestServerDefinition:
             ServerDefinition(transport="http")
 
     def test_invalid_transport(self):
-        with pytest.raises(ValueError, match="transport must be 'http' or 'stdio'"):
+        with pytest.raises(ValueError, match="transport must be 'http', 'sse', or 'stdio'"):
             ServerDefinition(name="bad", transport="grpc")
 
     def test_frozen(self):

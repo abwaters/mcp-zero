@@ -352,9 +352,16 @@ def run() -> None:
     # Build OBO auth provider when Okta OBO env vars are set
     auth_provider = _build_obo_provider(configs)
 
+    sse_enabled = _env_bool("MCP_SSE_ENABLED", default=True)
+
     server_manager = ServerManager(configs)
     proxy_server = ProxyServer(server_manager, pipeline=pipeline, auth_provider=auth_provider)
-    app = create_app(proxy_server, server_manager, analytics_collector=analytics_collector)
+    app = create_app(
+        proxy_server,
+        server_manager,
+        analytics_collector=analytics_collector,
+        sse_enabled=sse_enabled,
+    )
 
     host = os.environ.get("MCP_HOST", "0.0.0.0")
     port = int(os.environ.get("MCP_PORT", "8080"))
@@ -367,12 +374,13 @@ def run() -> None:
     plugin_count = len(plugin_manager.loaded_plugins)
     logger.info(
         "Gateway ready: servers=%d, identity=%s, governance=%s, "
-        "analytics=%s, plugins=%d, log_format=%s, log_level=%s",
+        "analytics=%s, plugins=%d, sse=%s, log_format=%s, log_level=%s",
         len(configs),
         "enabled" if pipeline else "disabled",
         "enabled (%d rules)" % len(policy_config.policies) if policy_config else "disabled",
         "enabled" if analytics_active else "disabled",
         plugin_count,
+        "enabled" if sse_enabled else "disabled",
         fmt,
         logging.getLogger().level,
     )

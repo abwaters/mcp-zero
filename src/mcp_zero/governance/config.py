@@ -51,8 +51,8 @@ class ServerDefinition:
 
     Args:
         name: Server identifier.
-        transport: Transport type ("http" or "stdio").
-        url: URL for HTTP transport.
+        transport: Transport type ("http", "sse", or "stdio").
+        url: URL for HTTP/SSE transport.
         command: Command for stdio transport.
         args: Arguments for stdio command.
         env: Environment variables for stdio.
@@ -75,9 +75,10 @@ class ServerDefinition:
     def __post_init__(self) -> None:
         if not self.name:
             raise ValueError("server.name is required")
-        if self.transport not in ("http", "stdio"):
+        if self.transport not in ("http", "sse", "stdio"):
             raise ValueError(
-                f"server '{self.name}' transport must be 'http' or 'stdio', got '{self.transport}'"
+                f"server '{self.name}' transport must be 'http', 'sse', or 'stdio', "
+                f"got '{self.transport}'"
             )
 
 

@@ -12,6 +12,7 @@ class TransportType(StrEnum):
     """Transport protocol type, matching YAML config values."""
 
     HTTP = "http"
+    SSE = "sse"
     STDIO = "stdio"
 
 
@@ -51,6 +52,11 @@ class ServerConfig:
         if self.transport == TransportType.HTTP:
             if not self.url:
                 raise ValueError(f"HTTP transport for '{self.name}' requires 'url'")
+            if not self.allow_insecure:
+                require_https(self.url, f"url for '{self.name}'")
+        elif self.transport == TransportType.SSE:
+            if not self.url:
+                raise ValueError(f"SSE transport for '{self.name}' requires 'url'")
             if not self.allow_insecure:
                 require_https(self.url, f"url for '{self.name}'")
         elif self.transport == TransportType.STDIO:

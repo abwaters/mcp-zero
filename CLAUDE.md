@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-mcp-zero is an Enterprise MCP (Model Context Protocol) Gateway — a centrally hosted control point that enforces governance, auditing, and data protection for MCP traffic in regulated enterprise environments. It supports both Streamable HTTP and stdio transports.
+mcp-zero is an Enterprise MCP (Model Context Protocol) Gateway — a centrally hosted control point that enforces governance, auditing, and data protection for MCP traffic in regulated enterprise environments. It supports Streamable HTTP, SSE (deprecated), and stdio transports.
 
 See `docs/prd.md` for full requirements and `docs/enterprise_mcp_gateway_architecture_diagram.md` for the logical architecture.
 
@@ -70,9 +70,11 @@ The gateway sits between enterprise AI tools and MCP servers:
 - **Governance**: Static YAML/JSON policy files, default-deny, server/tool/user/group-level controls
 - **Data protection**: Inline Presidio masking (built-in plugin) for PII and secrets on inputs and outputs
 - **Auditing**: Structured logs with user attribution, correlation IDs, policy decisions
-- **Transports**: Streamable HTTP and stdio (both enforce full pipeline when configured)
+- **Transports**: Streamable HTTP, SSE (deprecated), and stdio (all enforce full pipeline when configured)
 - **Plugins**: Entry-point based plugin system for extending the pipeline with custom hooks (masking, metrics, etc.)
 
-Both HTTP and stdio transports enforce governance, masking, and auditing through the same unified pipeline when configured.
+All transports (Streamable HTTP, SSE, stdio) enforce governance, masking, and auditing through the same unified pipeline when configured.
+
+- **SSE transport**: Deprecated in MCP protocol version 2025-03-26. Provided for backward compatibility with clients/servers that haven't adopted Streamable HTTP. Controlled by `MCP_SSE_ENABLED` env var (default: `true`). Set to `false` to disable inbound SSE endpoints and reduce attack surface.
 
 - **Analytics**: Optional Redis-based analytics subsystem (`src/mcp_zero/analytics/`). Enabled by setting `ANALYTICS_REDIS_URL`. See README for all `ANALYTICS_*` env vars. Use `docker compose up` to run Redis + RedisInsight locally.
