@@ -37,11 +37,17 @@ Enterprise AI Tool ──► MCP Gateway ──► MCP Servers
 
 ### Security Notice
 
-**IMPORTANT**: The gateway enforces security by default and requires proper configuration:
+**IMPORTANT**: The gateway is designed with fail-closed defaults but requires proper configuration to enforce security:
 
-- **Policy file required**: Gateway requires `MCP_POLICY_FILE` to be set or it will refuse to start (unless `MCP_ALLOW_INSECURE=true` is explicitly set for dev/testing only)
-- **Default-deny**: Without an explicit policy allowing access, all requests are denied by default
+- **Policy file recommended**: Set `MCP_POLICY_FILE` to enable governance, identity validation, masking, and audit logging
+- **Default-deny**: When policy file is configured, all requests are denied by default unless explicitly allowed
+- **Insecure mode**: Setting `MCP_ALLOW_INSECURE=true` disables HTTPS enforcement and allows startup without policy/identity configuration (dev/testing only)
 - **Masking dependencies**: PII/secret masking requires Presidio dependencies to be installed (included in standard installation)
+
+**Known Limitations** (see [security review](docs/security_review_mcp_gateway.md) for details):
+- Without a policy file, the gateway runs in legacy mode with no identity/governance/masking enforcement (F-03: OPEN)
+- Tool discovery (`list_tools`) does not enforce per-user authorization (F-06: documented limitation)
+- OBO token exchange requires explicit environment variables (`OKTA_TOKEN_ENDPOINT`, `OKTA_CLIENT_ID`, `OKTA_CLIENT_SECRET`) and per-server configuration
 
 Never run with `MCP_ALLOW_INSECURE=true` in production environments.
 

@@ -38,7 +38,7 @@
 - If session affinity and dynamic tool routing at scale are core requirements, Microsoft’s model is a stronger native fit.
 
 ### 3) Governance vs platform control plane emphasis
-- **mcp-zero:** governance semantics are central product identity (enforced on HTTP traffic; stdio connections bypass governance/masking).[^1]
+- **mcp-zero:** governance semantics are central product identity (enforced on both HTTP and stdio transports through a unified pipeline).[^1]
 - **Microsoft MCP Gateway:** platform operations and MCP server lifecycle management are central.
 
 **Trade-off**
@@ -90,7 +90,7 @@
 
 ## Implementation Notes
 
-[^1]: **stdio transport limitation**: mcp-zero supports stdio connections for gateway-spawned MCP server processes, but governance policy evaluation and Presidio masking are **only enforced on HTTP/Streamable HTTP** traffic. stdio connections bypass the governance and masking pipeline.
+[^1]: **Unified transport enforcement**: Both HTTP and stdio transports enforce the same governance, masking, and audit policies through a unified pipeline. Previous versions of this document incorrectly stated that stdio bypassed these controls; this was corrected following integration test validation in PR #101.
 
 ---
 

@@ -67,7 +67,7 @@ logging:
 
 masking:
   presidio:
-    enabled: true  # Requires separate Presidio plugin installation
+    enabled: true  # Built-in plugin loaded via entry point (mcp_zero.plugins:presidio-masking)
     entities:
       - PERSON
       - EMAIL_ADDRESS

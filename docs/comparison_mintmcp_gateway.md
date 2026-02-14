@@ -35,7 +35,7 @@ This environment could not directly retrieve `https://www.mintmcp.com/` due netw
 - `MintMCP`: teams optimizing for speed-to-value and reduced operational burden.
 
 ### 2) Security and compliance posture
-- **mcp-zero:** built-in policy enforcement (HTTP only)[^1], identity mapping with optional OBO token exchange[^2], Presidio masking (HTTP only)[^1], and structured audit hooks.
+- **mcp-zero:** built-in policy enforcement (both HTTP and stdio)[^1], identity mapping with optional OBO token exchange[^2], Presidio masking (both HTTP and stdio)[^1], and structured audit hooks.
 - **MintMCP:** public repos indicate security-focused components and hosted orchestration context, but governance semantics equivalent to mcp-zero's deny/allow policy engine are not the primary public framing.
 
 **Trade-off**
@@ -76,8 +76,8 @@ This environment could not directly retrieve `https://www.mintmcp.com/` due netw
 ## Recommended use-cases
 
 ### Prefer mcp-zero when
-1. You need enterprise-controlled governance policy with explicit authorization logic (enforced on HTTP traffic).
-2. You need to enforce masking/audit controls in your own trusted boundary (HTTP only; stdio bypasses enforcement).[^1]
+1. You need enterprise-controlled governance policy with explicit authorization logic (enforced on both HTTP and stdio transports).
+2. You need to enforce masking/audit controls in your own trusted boundary (both HTTP and stdio).[^1]
 3. You need a gateway framework you can tailor deeply in Python.
 
 ### Prefer MintMCP when
@@ -95,7 +95,7 @@ This environment could not directly retrieve `https://www.mintmcp.com/` due netw
 
 ## Implementation Notes
 
-[^1]: **stdio transport limitation**: mcp-zero supports stdio connections for gateway-spawned MCP server processes, but governance policy evaluation and Presidio masking are **only enforced on HTTP/Streamable HTTP** traffic. stdio connections bypass the governance and masking pipeline.
+[^1]: **Unified transport enforcement**: Both HTTP and stdio transports enforce the same governance, masking, and audit policies through a unified pipeline. Previous versions of this document incorrectly stated that stdio bypassed these controls; this was corrected following integration test validation in PR #101.
 
 [^2]: **OBO token exchange configuration**: OBO token exchange is implemented but requires explicit configuration: (1) set `OKTA_TOKEN_ENDPOINT`, `OKTA_CLIENT_ID`, and `OKTA_CLIENT_SECRET` environment variables, and (2) enable OBO per-server in the policy file with `obo.enabled: true`, `obo.target_audience`, and `obo.scopes`.
 

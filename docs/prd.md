@@ -118,13 +118,15 @@ And logs the action with policy decision "deny"
 - ✅ Structured audit logging
 - ✅ HTTP transport with full pipeline enforcement
 - ✅ stdio transport with full enforcement (verified via integration tests)
+- ✅ OBO token exchange (fully implemented and operational - requires explicit env var configuration. See [docs/okta_obo_for_an_enterprise_mcp_gateway.md](okta_obo_for_an_enterprise_mcp_gateway.md))
+- ✅ Plugin architecture (entry point discovery, hook registration, lifecycle management. See [docs/plugin-architecture-design.md](plugin-architecture-design.md))
+- ✅ Analytics/Redis integration (time-bucketed metrics, gateway registry, heartbeat. See [docs/analytics-redis-plan.md](analytics-redis-plan.md))
 
 ### Partially Implemented
-- ⚠️ OBO token exchange (infrastructure exists, not invoked in request flow)
+- ⚠️ Presidio masking extraction as standalone plugin (Presidio is currently a built-in plugin in core package, not extracted to separate `mcp-zero-presidio` package)
 
 ### Planned / Not Implemented
-- ❌ Plugin architecture
-- ❌ Analytics/Redis integration
 - ❌ Policy authoring UI
 - ❌ Dynamic policy reloading
+- ❌ Example plugins (rate limiting, OpenTelemetry, regex masking)
 
