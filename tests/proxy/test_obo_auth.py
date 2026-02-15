@@ -85,27 +85,27 @@ class TestOBOAuthProvider:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_missing_raw_token_returns_none(self):
+    async def test_missing_raw_token_raises_exchange_error(self):
         obo_client = AsyncMock()
         settings = {"weather": _make_settings()}
         provider = OBOAuthProvider(obo_client, settings)
 
         ctx = _make_context(raw_token=None)
-        result = await provider.get_token("weather", ctx)
+        with pytest.raises(TokenExchangeError, match="no authenticated token"):
+            await provider.get_token("weather", ctx)
 
-        assert result is None
         obo_client.exchange_token.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_missing_identity_returns_none(self):
+    async def test_missing_identity_raises_exchange_error(self):
         obo_client = AsyncMock()
         settings = {"weather": _make_settings()}
         provider = OBOAuthProvider(obo_client, settings)
 
         ctx = _make_context(raw_token=_make_raw_token(), identity=None)
-        result = await provider.get_token("weather", ctx)
+        with pytest.raises(TokenExchangeError, match="no authenticated identity"):
+            await provider.get_token("weather", ctx)
 
-        assert result is None
         obo_client.exchange_token.assert_not_called()
 
     @pytest.mark.asyncio
