@@ -12,6 +12,7 @@ from mcp_zero.main import (
     _build_obo_provider,
     _build_pipeline,
     _is_insecure_allowed,
+    _is_strict_security,
     _load_policy_and_configs,
     _load_server_configs,
     run,
@@ -435,3 +436,183 @@ class TestBuildOBOProviderValidation:
         )
         result = _build_obo_provider([config], identity_enabled=False)
         assert result is None
+
+
+class TestIsStrictSecurity:
+    def test_not_set(self, monkeypatch):
+        monkeypatch.delenv("MCP_STRICT_SECURITY", raising=False)
+        assert _is_strict_security() is False
+
+    def test_empty(self, monkeypatch):
+        monkeypatch.setenv("MCP_STRICT_SECURITY", "")
+        assert _is_strict_security() is False
+
+    def test_truthy_1(self, monkeypatch):
+        monkeypatch.setenv("MCP_STRICT_SECURITY", "1")
+        assert _is_strict_security() is True
+
+    def test_truthy_true(self, monkeypatch):
+        monkeypatch.setenv("MCP_STRICT_SECURITY", "true")
+        assert _is_strict_security() is True
+
+    def test_truthy_yes(self, monkeypatch):
+        monkeypatch.setenv("MCP_STRICT_SECURITY", "yes")
+        assert _is_strict_security() is True
+
+    def test_truthy_case_insensitive(self, monkeypatch):
+        monkeypatch.setenv("MCP_STRICT_SECURITY", "TRUE")
+        assert _is_strict_security() is True
+
+    def test_falsy_value(self, monkeypatch):
+        monkeypatch.setenv("MCP_STRICT_SECURITY", "0")
+        assert _is_strict_security() is False
+
+
+class TestStrictSecurityStartup:
+    """Tests for MCP_STRICT_SECURITY startup enforcement (MZ-02)."""
+
+    def test_strict_security_refuses_without_identity(self, monkeypatch, tmp_path):
+        """Strict mode refuses startup when governance is active but identity is missing."""
+        policy = {
+            "version": 1,
+            "default": "deny",
+            "servers": [
+                {"name": "api", "transport": "http", "url": "https://localhost:9000"},
+            ],
+            "policies": [],
+        }
+        path = tmp_path / "policy.yaml"
+        path.write_text(yaml.dump(policy))
+
+        monkeypatch.setenv("MCP_POLICY_FILE", str(path))
+        monkeypatch.setenv("MCP_STRICT_SECURITY", "true")
+        monkeypatch.delenv("OKTA_ISSUER", raising=False)
+        monkeypatch.delenv("OKTA_AUDIENCE", raising=False)
+        monkeypatch.delenv("MCP_ALLOW_INSECURE", raising=False)
+
+        with pytest.raises(SystemExit) as exc_info:
+            run()
+        assert exc_info.value.code == 78
+
+    def test_strict_security_refuses_without_governance(self, monkeypatch):
+        """Strict mode refuses startup when identity is active but governance is missing."""
+        monkeypatch.delenv("MCP_POLICY_FILE", raising=False)
+        monkeypatch.delenv("MCP_UPSTREAM_URL", raising=False)
+        monkeypatch.setenv("MCP_STRICT_SECURITY", "true")
+        monkeypatch.setenv("OKTA_ISSUER", "https://okta.example.com")
+        monkeypatch.setenv("OKTA_AUDIENCE", "my-app")
+        monkeypatch.setenv("MCP_ALLOW_INSECURE", "true")  # bypass pipeline-is-None check
+
+        with pytest.raises(SystemExit) as exc_info:
+            run()
+        assert exc_info.value.code == 78
+
+    @patch("mcp_zero.main.uvicorn")
+    def test_strict_security_allows_full_config(self, mock_uvicorn, monkeypatch, tmp_path):
+        """Strict mode starts normally when both identity and governance are active."""
+        policy = {
+            "version": 1,
+            "default": "deny",
+            "identity": {
+                "provider": "okta",
+                "issuer": "https://example.okta.com",
+                "audience": "my-app",
+            },
+            "servers": [
+                {"name": "api", "transport": "http", "url": "https://localhost:9000"},
+            ],
+            "policies": [],
+        }
+        path = tmp_path / "policy.yaml"
+        path.write_text(yaml.dump(policy))
+
+        monkeypatch.setenv("MCP_POLICY_FILE", str(path))
+        monkeypatch.setenv("MCP_STRICT_SECURITY", "true")
+        monkeypatch.delenv("MCP_ALLOW_INSECURE", raising=False)
+        monkeypatch.setenv("MCP_HOST", "127.0.0.1")
+        monkeypatch.setenv("MCP_PORT", "9999")
+
+        run()
+
+        mock_uvicorn.run.assert_called_once()
+
+
+class TestDefaultAllowWithoutIdentity:
+    """Tests for default:allow + no identity startup block (MZ-02)."""
+
+    def test_default_allow_without_identity_refuses(self, monkeypatch, tmp_path):
+        """Policy with default:allow and no identity should refuse startup."""
+        policy = {
+            "version": 1,
+            "default": "allow",
+            "servers": [
+                {"name": "api", "transport": "http", "url": "https://localhost:9000"},
+            ],
+            "policies": [],
+        }
+        path = tmp_path / "policy.yaml"
+        path.write_text(yaml.dump(policy))
+
+        monkeypatch.setenv("MCP_POLICY_FILE", str(path))
+        monkeypatch.delenv("OKTA_ISSUER", raising=False)
+        monkeypatch.delenv("OKTA_AUDIENCE", raising=False)
+        monkeypatch.delenv("MCP_ALLOW_INSECURE", raising=False)
+
+        with pytest.raises(SystemExit) as exc_info:
+            run()
+        assert exc_info.value.code == 78
+
+    @patch("mcp_zero.main.uvicorn")
+    def test_default_allow_without_identity_allowed_insecure(
+        self, mock_uvicorn, monkeypatch, tmp_path
+    ):
+        """Policy with default:allow and no identity starts when MCP_ALLOW_INSECURE is set."""
+        policy = {
+            "version": 1,
+            "default": "allow",
+            "servers": [
+                {"name": "api", "transport": "http", "url": "https://localhost:9000"},
+            ],
+            "policies": [],
+        }
+        path = tmp_path / "policy.yaml"
+        path.write_text(yaml.dump(policy))
+
+        monkeypatch.setenv("MCP_POLICY_FILE", str(path))
+        monkeypatch.delenv("OKTA_ISSUER", raising=False)
+        monkeypatch.delenv("OKTA_AUDIENCE", raising=False)
+        monkeypatch.setenv("MCP_ALLOW_INSECURE", "true")
+        monkeypatch.setenv("MCP_HOST", "127.0.0.1")
+        monkeypatch.setenv("MCP_PORT", "9999")
+
+        run()
+
+        mock_uvicorn.run.assert_called_once()
+
+    @patch("mcp_zero.main.uvicorn")
+    def test_default_allow_with_identity_allowed(self, mock_uvicorn, monkeypatch, tmp_path):
+        """Policy with default:allow and identity configured starts normally."""
+        policy = {
+            "version": 1,
+            "default": "allow",
+            "identity": {
+                "provider": "okta",
+                "issuer": "https://example.okta.com",
+                "audience": "my-app",
+            },
+            "servers": [
+                {"name": "api", "transport": "http", "url": "https://localhost:9000"},
+            ],
+            "policies": [],
+        }
+        path = tmp_path / "policy.yaml"
+        path.write_text(yaml.dump(policy))
+
+        monkeypatch.setenv("MCP_POLICY_FILE", str(path))
+        monkeypatch.delenv("MCP_ALLOW_INSECURE", raising=False)
+        monkeypatch.setenv("MCP_HOST", "127.0.0.1")
+        monkeypatch.setenv("MCP_PORT", "9999")
+
+        run()
+
+        mock_uvicorn.run.assert_called_once()
