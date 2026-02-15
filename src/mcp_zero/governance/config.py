@@ -213,6 +213,8 @@ class CorsConfig:
     def __post_init__(self) -> None:
         if not self.allow_origins:
             raise ValueError("cors.allow_origins must be a non-empty list")
+        if "*" in self.allow_origins and self.allow_credentials:
+            raise ValueError("cors.allow_origins=['*'] cannot be used with allow_credentials=True")
         if self.max_age < 0:
             raise ValueError(f"cors.max_age must be >= 0, got {self.max_age}")
 
