@@ -48,7 +48,7 @@ The gateway provides hard enforcement for hosted enterprise AI tools and observa
 
 #### MCP Support
 - Full MCP spec support (tools, resources, prompts, sampling)
-- Streamable HTTP and stdio transport
+- Streamable HTTP, SSE (deprecated, for backward compatibility), and stdio transport
 - First- and third-party MCP servers
 - Best-effort compatibility with MCP spec changes
 
@@ -67,6 +67,7 @@ The gateway provides hard enforcement for hosted enterprise AI tools and observa
 
 #### Transport & Enforcement Model
 - **HTTP / Streamable HTTP**: primary enforcement path — full governance, OBO token exchange, data masking, and auditing
+- **SSE (deprecated)**: backward-compatible transport for clients/servers that haven't adopted Streamable HTTP — full pipeline enforcement (identity, governance, masking, audit). Controlled by `MCP_SSE_ENABLED` env var (default: `true`)
 - **stdio (gateway-managed)**: supported for gateway-spawned MCP server processes — governance, masking, and auditing enforced through the same pipeline as HTTP
 - **Local developer stdio**: observability-only — local stdio-based MCP usage outside the gateway is not enforced; monitored through complementary controls
 

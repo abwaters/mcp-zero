@@ -232,6 +232,52 @@ class TestBuildPipelinePlugins:
             _build_pipeline(policy_config=policy)
 
 
+class TestBuildPipelinePostureLogging:
+    def test_policy_without_identity_logs_warning(self, monkeypatch, caplog):
+        """Policy loaded without identity should produce a WARNING-level log."""
+        monkeypatch.delenv("OKTA_ISSUER", raising=False)
+        monkeypatch.delenv("OKTA_AUDIENCE", raising=False)
+        policy = PolicyConfig(version=1)
+
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            _build_pipeline(policy_config=policy)
+
+        assert any("SECURITY POSTURE" in r.message for r in caplog.records)
+        assert any("anonymous" in r.message for r in caplog.records)
+
+    def test_issuer_without_audience_with_policy_logs_warning(self, monkeypatch, caplog):
+        """OKTA_ISSUER without OKTA_AUDIENCE + policy should warn about misconfiguration."""
+        monkeypatch.setenv("OKTA_ISSUER", "https://okta.example.com")
+        monkeypatch.delenv("OKTA_AUDIENCE", raising=False)
+        policy = PolicyConfig(version=1)
+
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            _build_pipeline(policy_config=policy)
+
+        assert any("OKTA_AUDIENCE" in r.message for r in caplog.records)
+        assert any("SECURITY POSTURE" in r.message for r in caplog.records)
+
+    def test_no_config_logs_pipeline_disabled_at_warning(self, monkeypatch, caplog):
+        """Pipeline disabled message should be logged at WARNING level."""
+        monkeypatch.delenv("OKTA_ISSUER", raising=False)
+        monkeypatch.delenv("OKTA_AUDIENCE", raising=False)
+
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            pipeline, _ = _build_pipeline()
+
+        assert pipeline is None
+        assert any(
+            "pipeline disabled" in r.message and r.levelno == logging.WARNING
+            for r in caplog.records
+        )
+
+
 class TestRun:
     def test_refuses_startup_without_config(self, monkeypatch):
         """Gateway refuses to start without identity/policy config (fail-closed)."""
@@ -244,6 +290,55 @@ class TestRun:
         with pytest.raises(SystemExit) as exc_info:
             run()
         assert exc_info.value.code == 78
+
+    def test_refuses_startup_with_partial_identity_config(self, monkeypatch, tmp_path):
+        """Gateway refuses when OKTA_ISSUER is set without OKTA_AUDIENCE + policy file."""
+        policy = {
+            "version": 1,
+            "default": "deny",
+            "servers": [
+                {"name": "api", "transport": "http", "url": "https://localhost:9000"},
+            ],
+            "policies": [],
+        }
+        path = tmp_path / "policy.yaml"
+        path.write_text(yaml.dump(policy))
+
+        monkeypatch.setenv("MCP_POLICY_FILE", str(path))
+        monkeypatch.setenv("OKTA_ISSUER", "https://okta.example.com")
+        monkeypatch.delenv("OKTA_AUDIENCE", raising=False)
+        monkeypatch.delenv("MCP_ALLOW_INSECURE", raising=False)
+
+        with pytest.raises(SystemExit) as exc_info:
+            run()
+        assert exc_info.value.code == 78
+
+    @patch("mcp_zero.main.uvicorn")
+    def test_partial_identity_allowed_with_allow_insecure(
+        self, mock_uvicorn, monkeypatch, tmp_path
+    ):
+        """Partial identity config starts when MCP_ALLOW_INSECURE is set."""
+        policy = {
+            "version": 1,
+            "default": "deny",
+            "servers": [
+                {"name": "api", "transport": "http", "url": "https://localhost:9000"},
+            ],
+            "policies": [],
+        }
+        path = tmp_path / "policy.yaml"
+        path.write_text(yaml.dump(policy))
+
+        monkeypatch.setenv("MCP_POLICY_FILE", str(path))
+        monkeypatch.setenv("OKTA_ISSUER", "https://okta.example.com")
+        monkeypatch.delenv("OKTA_AUDIENCE", raising=False)
+        monkeypatch.setenv("MCP_ALLOW_INSECURE", "true")
+        monkeypatch.setenv("MCP_HOST", "127.0.0.1")
+        monkeypatch.setenv("MCP_PORT", "9999")
+
+        run()
+
+        mock_uvicorn.run.assert_called_once()
 
     @patch("mcp_zero.main.uvicorn")
     def test_starts_insecure_with_allow_insecure(self, mock_uvicorn, monkeypatch):

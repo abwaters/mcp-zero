@@ -5,6 +5,7 @@ from __future__ import annotations
 from mcp_zero.transport.base import MCPTransport
 from mcp_zero.transport.config import ServerConfig, TransportType
 from mcp_zero.transport.http import StreamableHTTPTransport
+from mcp_zero.transport.sse import SSETransport
 from mcp_zero.transport.stdio import StdioTransport
 
 
@@ -13,6 +14,7 @@ class TransportFactory:
 
     _registry: dict[TransportType, type[MCPTransport]] = {
         TransportType.HTTP: StreamableHTTPTransport,
+        TransportType.SSE: SSETransport,
         TransportType.STDIO: StdioTransport,
     }
 
