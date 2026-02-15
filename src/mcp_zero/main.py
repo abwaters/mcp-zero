@@ -160,7 +160,6 @@ def _build_cors_config(policy_config: PolicyConfig | None) -> CorsConfig | None:
     Environment variables override policy file values.  CORS is enabled
     when origins are configured via either source.
     """
-    # Start from policy file config or nothing
     base = policy_config.cors if policy_config is not None else None
 
     # Check env var override for origins
@@ -172,33 +171,12 @@ def _build_cors_config(policy_config: PolicyConfig | None) -> CorsConfig | None:
     if origins is None and base is None:
         return None  # CORS not configured
 
-    if origins is None and base is not None:
-        # Policy-only: apply credential/max_age env overrides if present
-        env_creds = os.environ.get("MCP_CORS_ALLOW_CREDENTIALS", "").strip().lower()
-        env_max_age = os.environ.get("MCP_CORS_MAX_AGE", "").strip()
-
-        allow_credentials = base.allow_credentials
-        if env_creds:
-            allow_credentials = env_creds in ("1", "true", "yes")
-
-        max_age = base.max_age
-        if env_max_age:
-            max_age = int(env_max_age)
-
-        return CorsConfig(
-            allow_origins=base.allow_origins,
-            allow_methods=base.allow_methods,
-            allow_headers=base.allow_headers,
-            allow_credentials=allow_credentials,
-            max_age=max_age,
-            expose_headers=base.expose_headers,
-        )
-
-    # Env-only or env overrides policy
-    allow_credentials = base.allow_credentials if base else False
-    max_age = base.max_age if base else 600
+    # Start from policy base or defaults, then apply env overrides
+    allow_origins = origins if origins is not None else base.allow_origins
     allow_methods = base.allow_methods if base else ["GET", "POST", "OPTIONS"]
     allow_headers = base.allow_headers if base else ["Authorization", "Content-Type"]
+    allow_credentials = base.allow_credentials if base else False
+    max_age = base.max_age if base else 600
     expose_headers = base.expose_headers if base else []
 
     env_creds = os.environ.get("MCP_CORS_ALLOW_CREDENTIALS", "").strip().lower()
@@ -210,7 +188,7 @@ def _build_cors_config(policy_config: PolicyConfig | None) -> CorsConfig | None:
         max_age = int(env_max_age)
 
     return CorsConfig(
-        allow_origins=origins if origins is not None else base.allow_origins,
+        allow_origins=allow_origins,
         allow_methods=allow_methods,
         allow_headers=allow_headers,
         allow_credentials=allow_credentials,
