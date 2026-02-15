@@ -5,10 +5,11 @@ from unittest.mock import patch
 import pytest
 import yaml
 
-from mcp_zero.governance.config import PluginDeclaration, PolicyConfig
+from mcp_zero.governance.config import CorsConfig, PluginDeclaration, PolicyConfig
 from mcp_zero.governance.errors import PolicyFileError
 from mcp_zero.identity.config import IdentityConfig
 from mcp_zero.main import (
+    _build_cors_config,
     _build_obo_provider,
     _build_pipeline,
     _is_insecure_allowed,
@@ -381,6 +382,72 @@ class TestRun:
         run()
 
         mock_uvicorn.run.assert_called_once()
+
+
+class TestBuildCorsConfig:
+    def test_no_config_returns_none(self, monkeypatch):
+        monkeypatch.delenv("MCP_CORS_ORIGINS", raising=False)
+        result = _build_cors_config(None)
+        assert result is None
+
+    def test_policy_only(self, monkeypatch):
+        monkeypatch.delenv("MCP_CORS_ORIGINS", raising=False)
+        monkeypatch.delenv("MCP_CORS_ALLOW_CREDENTIALS", raising=False)
+        monkeypatch.delenv("MCP_CORS_MAX_AGE", raising=False)
+        policy = PolicyConfig(
+            version=1,
+            cors=CorsConfig(allow_origins=["https://app.example.com"]),
+        )
+        result = _build_cors_config(policy)
+        assert result is not None
+        assert result.allow_origins == ["https://app.example.com"]
+        assert result.allow_credentials is False
+        assert result.max_age == 600
+
+    def test_env_only(self, monkeypatch):
+        monkeypatch.setenv("MCP_CORS_ORIGINS", "https://a.com, https://b.com")
+        monkeypatch.delenv("MCP_CORS_ALLOW_CREDENTIALS", raising=False)
+        monkeypatch.delenv("MCP_CORS_MAX_AGE", raising=False)
+        result = _build_cors_config(None)
+        assert result is not None
+        assert result.allow_origins == ["https://a.com", "https://b.com"]
+
+    def test_env_overrides_policy(self, monkeypatch):
+        monkeypatch.setenv("MCP_CORS_ORIGINS", "https://override.com")
+        monkeypatch.setenv("MCP_CORS_ALLOW_CREDENTIALS", "true")
+        monkeypatch.setenv("MCP_CORS_MAX_AGE", "1200")
+        policy = PolicyConfig(
+            version=1,
+            cors=CorsConfig(
+                allow_origins=["https://original.com"],
+                allow_credentials=False,
+                max_age=300,
+            ),
+        )
+        result = _build_cors_config(policy)
+        assert result.allow_origins == ["https://override.com"]
+        assert result.allow_credentials is True
+        assert result.max_age == 1200
+
+    def test_empty_env_not_treated_as_set(self, monkeypatch):
+        monkeypatch.setenv("MCP_CORS_ORIGINS", "")
+        result = _build_cors_config(None)
+        assert result is None
+
+    def test_policy_with_credential_env_override(self, monkeypatch):
+        monkeypatch.delenv("MCP_CORS_ORIGINS", raising=False)
+        monkeypatch.setenv("MCP_CORS_ALLOW_CREDENTIALS", "true")
+        monkeypatch.delenv("MCP_CORS_MAX_AGE", raising=False)
+        policy = PolicyConfig(
+            version=1,
+            cors=CorsConfig(
+                allow_origins=["https://app.com"],
+                allow_credentials=False,
+            ),
+        )
+        result = _build_cors_config(policy)
+        assert result.allow_origins == ["https://app.com"]
+        assert result.allow_credentials is True
 
 
 class TestBuildOBOProviderValidation:

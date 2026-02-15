@@ -4,7 +4,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from starlette.applications import Starlette
+from starlette.middleware.cors import CORSMiddleware
 
+from mcp_zero.governance.config import CorsConfig
 from mcp_zero.proxy.app import create_app
 from mcp_zero.proxy.middleware import AuthHeaderMiddleware
 from mcp_zero.proxy.proxy_server import ProxyServer
@@ -49,6 +51,21 @@ class TestCreateApp:
         inner_app = app._app
         route_paths = [r.path for r in inner_app.routes]
         assert "/mcp" in route_paths
+
+    def test_no_cors_returns_auth_middleware(self):
+        mgr = ServerManager(make_configs())
+        proxy = ProxyServer(mgr)
+        app = create_app(proxy, mgr, cors_config=None)
+        assert isinstance(app, AuthHeaderMiddleware)
+
+    def test_with_cors_returns_cors_middleware_wrapping_auth(self):
+        mgr = ServerManager(make_configs())
+        proxy = ProxyServer(mgr)
+        cors = CorsConfig(allow_origins=["https://example.com"])
+        app = create_app(proxy, mgr, cors_config=cors)
+        assert isinstance(app, CORSMiddleware)
+        # CORSMiddleware wraps the AuthHeaderMiddleware
+        assert isinstance(app.app, AuthHeaderMiddleware)
 
     @pytest.mark.asyncio
     async def test_lifespan_disconnects_on_shutdown(self):

@@ -9,11 +9,13 @@ from collections.abc import AsyncIterator
 from mcp.server.sse import SseServerTransport
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from starlette.applications import Starlette
+from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from starlette.routing import Mount, Route
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from mcp_zero.analytics.collector import AnalyticsCollector
+from mcp_zero.governance.config import CorsConfig
 from mcp_zero.proxy.middleware import AuthHeaderMiddleware
 from mcp_zero.proxy.proxy_server import ProxyServer
 from mcp_zero.proxy.server_manager import ServerManager
@@ -27,6 +29,7 @@ def create_app(
     *,
     analytics_collector: AnalyticsCollector | None = None,
     sse_enabled: bool = True,
+    cors_config: CorsConfig | None = None,
 ) -> ASGIApp:
     """Build a Starlette ASGI app that serves the MCP proxy on ``/mcp``.
 
@@ -99,4 +102,18 @@ def create_app(
         routes=routes,
         lifespan=lifespan,
     )
-    return AuthHeaderMiddleware(app)
+    wrapped: ASGIApp = AuthHeaderMiddleware(app)
+
+    if cors_config is not None:
+        wrapped = CORSMiddleware(
+            wrapped,
+            allow_origins=cors_config.allow_origins,
+            allow_methods=cors_config.allow_methods,
+            allow_headers=cors_config.allow_headers,
+            allow_credentials=cors_config.allow_credentials,
+            max_age=cors_config.max_age,
+            expose_headers=cors_config.expose_headers,
+        )
+        logger.info("CORS middleware enabled: origins=%s", cors_config.allow_origins)
+
+    return wrapped

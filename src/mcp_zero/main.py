@@ -15,7 +15,7 @@ from mcp_zero.analytics.collector import AnalyticsCollector
 from mcp_zero.analytics.config import RedisConfig
 from mcp_zero.audit import AuditHook
 from mcp_zero.events.bus import EventBus
-from mcp_zero.governance import GovernanceHook, PolicyConfig, PolicyEngine
+from mcp_zero.governance import CorsConfig, GovernanceHook, PolicyConfig, PolicyEngine
 from mcp_zero.governance.errors import GovernanceError
 from mcp_zero.governance.loader import (
     convert_to_identity_config,
@@ -141,6 +141,71 @@ def _build_analytics_config(policy_config: PolicyConfig | None) -> AnalyticsConf
         heartbeat_seconds=config.heartbeat_seconds if config else 30,
         queue_size=config.queue_size if config else 10000,
         flush_interval=config.flush_interval if config else 1.0,
+    )
+
+
+def _build_cors_config(policy_config: PolicyConfig | None) -> CorsConfig | None:
+    """Build a CorsConfig from policy file and/or environment variables.
+
+    Environment variables override policy file values.  CORS is enabled
+    when origins are configured via either source.
+    """
+    # Start from policy file config or nothing
+    base = policy_config.cors if policy_config is not None else None
+
+    # Check env var override for origins
+    env_origins = os.environ.get("MCP_CORS_ORIGINS", "").strip()
+    origins: list[str] | None = None
+    if env_origins:
+        origins = [o.strip() for o in env_origins.split(",") if o.strip()]
+
+    if origins is None and base is None:
+        return None  # CORS not configured
+
+    if origins is None and base is not None:
+        # Policy-only: apply credential/max_age env overrides if present
+        env_creds = os.environ.get("MCP_CORS_ALLOW_CREDENTIALS", "").strip().lower()
+        env_max_age = os.environ.get("MCP_CORS_MAX_AGE", "").strip()
+
+        allow_credentials = base.allow_credentials
+        if env_creds:
+            allow_credentials = env_creds in ("1", "true", "yes")
+
+        max_age = base.max_age
+        if env_max_age:
+            max_age = int(env_max_age)
+
+        return CorsConfig(
+            allow_origins=base.allow_origins,
+            allow_methods=base.allow_methods,
+            allow_headers=base.allow_headers,
+            allow_credentials=allow_credentials,
+            max_age=max_age,
+            expose_headers=base.expose_headers,
+        )
+
+    # Env-only or env overrides policy
+    allow_credentials = base.allow_credentials if base else False
+    max_age = base.max_age if base else 600
+    allow_methods = base.allow_methods if base else ["GET", "POST", "OPTIONS"]
+    allow_headers = base.allow_headers if base else ["Authorization", "Content-Type"]
+    expose_headers = base.expose_headers if base else []
+
+    env_creds = os.environ.get("MCP_CORS_ALLOW_CREDENTIALS", "").strip().lower()
+    if env_creds:
+        allow_credentials = env_creds in ("1", "true", "yes")
+
+    env_max_age = os.environ.get("MCP_CORS_MAX_AGE", "").strip()
+    if env_max_age:
+        max_age = int(env_max_age)
+
+    return CorsConfig(
+        allow_origins=origins if origins is not None else base.allow_origins,
+        allow_methods=allow_methods,
+        allow_headers=allow_headers,
+        allow_credentials=allow_credentials,
+        max_age=max_age,
+        expose_headers=expose_headers,
     )
 
 
@@ -420,6 +485,9 @@ def run() -> None:
 
     sse_enabled = _env_bool("MCP_SSE_ENABLED", default=True)
 
+    # Build CORS config (optional — enabled when origins are configured)
+    cors_config = _build_cors_config(policy_config)
+
     server_manager = ServerManager(configs)
     proxy_server = ProxyServer(
         server_manager,
@@ -433,6 +501,7 @@ def run() -> None:
         server_manager,
         analytics_collector=analytics_collector,
         sse_enabled=sse_enabled,
+        cors_config=cors_config,
     )
 
     host = os.environ.get("MCP_HOST", "0.0.0.0")
@@ -466,15 +535,17 @@ def run() -> None:
             "All requests proxied without security controls (MCP_ALLOW_INSECURE=true).",
         )
 
+    cors_active = cors_config is not None
     logger.info(
         "Gateway ready: servers=%d, identity=%s, governance=%s, "
-        "analytics=%s, plugins=%d, sse=%s, log_format=%s, log_level=%s",
+        "analytics=%s, plugins=%d, sse=%s, cors=%s, log_format=%s, log_level=%s",
         len(configs),
         "enabled" if identity_active else "disabled",
         "enabled (%d rules)" % len(policy_config.policies) if policy_config else "disabled",
         "enabled" if analytics_active else "disabled",
         plugin_count,
         "enabled" if sse_enabled else "disabled",
+        "enabled" if cors_active else "disabled",
         fmt,
         logging.getLogger().level,
     )
