@@ -11,6 +11,7 @@ import yaml
 
 from mcp_zero.analytics.config import AnalyticsConfig, RedisConfig
 from mcp_zero.governance.config import (
+    CorsConfig,
     IdentityProviderConfig,
     LoggingConfig,
     MaskingConfig,
@@ -241,6 +242,11 @@ def _build_policy_config(data: dict, file_path: str) -> PolicyConfig:
     if "analytics" in data:
         analytics_config = _build_analytics(data["analytics"])
 
+    # CORS (optional)
+    cors_config = None
+    if "cors" in data:
+        cors_config = _build_cors(data["cors"])
+
     # Plugins (optional)
     plugins: list[PluginDeclaration] = []
     if "plugins" in data:
@@ -256,6 +262,7 @@ def _build_policy_config(data: dict, file_path: str) -> PolicyConfig:
             logging=logging_config,
             masking=masking_config,
             analytics=analytics_config,
+            cors=cors_config,
             plugins=plugins,
         )
     except ValueError as exc:
@@ -431,6 +438,23 @@ def _build_analytics(data: dict) -> AnalyticsConfig:
         queue_size=int(data.get("queue_size", 10000)),
         flush_interval=float(data.get("flush_interval", 1.0)),
     )
+
+
+def _build_cors(data: dict) -> CorsConfig:
+    """Build a CorsConfig from a dict."""
+    if not isinstance(data, dict):
+        raise PolicyValidationError("cors must be a mapping", field="cors")
+    try:
+        return CorsConfig(
+            allow_origins=data.get("allow_origins", []),
+            allow_methods=data.get("allow_methods", ["GET", "POST", "OPTIONS"]),
+            allow_headers=data.get("allow_headers", ["Authorization", "Content-Type"]),
+            allow_credentials=data.get("allow_credentials", False),
+            max_age=int(data.get("max_age", 600)),
+            expose_headers=data.get("expose_headers", []),
+        )
+    except ValueError as exc:
+        raise PolicyValidationError(str(exc), field="cors") from exc
 
 
 def _build_plugins(data: list) -> list[PluginDeclaration]:

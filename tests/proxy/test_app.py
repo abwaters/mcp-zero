@@ -2,9 +2,12 @@
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 from starlette.applications import Starlette
+from starlette.middleware.cors import CORSMiddleware
 
+from mcp_zero.governance.config import CorsConfig
 from mcp_zero.proxy.app import create_app
 from mcp_zero.proxy.middleware import AuthHeaderMiddleware
 from mcp_zero.proxy.proxy_server import ProxyServer
@@ -49,6 +52,66 @@ class TestCreateApp:
         inner_app = app._app
         route_paths = [r.path for r in inner_app.routes]
         assert "/mcp" in route_paths
+
+    def test_no_cors_returns_auth_middleware(self):
+        mgr = ServerManager(make_configs())
+        proxy = ProxyServer(mgr)
+        app = create_app(proxy, mgr, cors_config=None)
+        assert isinstance(app, AuthHeaderMiddleware)
+
+    def test_with_cors_returns_cors_middleware_wrapping_auth(self):
+        mgr = ServerManager(make_configs())
+        proxy = ProxyServer(mgr)
+        cors = CorsConfig(allow_origins=["https://example.com"])
+        app = create_app(proxy, mgr, cors_config=cors)
+        assert isinstance(app, CORSMiddleware)
+        # CORSMiddleware wraps the AuthHeaderMiddleware
+        assert isinstance(app.app, AuthHeaderMiddleware)
+
+    @pytest.mark.asyncio
+    async def test_cors_preflight_returns_correct_headers(self):
+        mgr = ServerManager(make_configs())
+        proxy = ProxyServer(mgr)
+        cors = CorsConfig(
+            allow_origins=["https://example.com"],
+            allow_methods=["GET", "POST", "OPTIONS"],
+            allow_headers=["Authorization", "Content-Type"],
+            max_age=300,
+        )
+        app = create_app(proxy, mgr, cors_config=cors)
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://testserver"
+        ) as client:
+            resp = await client.options(
+                "/mcp",
+                headers={
+                    "Origin": "https://example.com",
+                    "Access-Control-Request-Method": "POST",
+                    "Access-Control-Request-Headers": "Authorization",
+                },
+            )
+        assert resp.status_code == 200
+        assert resp.headers["access-control-allow-origin"] == "https://example.com"
+        assert "POST" in resp.headers["access-control-allow-methods"]
+        assert resp.headers["access-control-max-age"] == "300"
+
+    @pytest.mark.asyncio
+    async def test_cors_rejects_disallowed_origin(self):
+        mgr = ServerManager(make_configs())
+        proxy = ProxyServer(mgr)
+        cors = CorsConfig(allow_origins=["https://allowed.com"])
+        app = create_app(proxy, mgr, cors_config=cors)
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://testserver"
+        ) as client:
+            resp = await client.options(
+                "/mcp",
+                headers={
+                    "Origin": "https://evil.com",
+                    "Access-Control-Request-Method": "POST",
+                },
+            )
+        assert "access-control-allow-origin" not in resp.headers
 
     @pytest.mark.asyncio
     async def test_lifespan_disconnects_on_shutdown(self):

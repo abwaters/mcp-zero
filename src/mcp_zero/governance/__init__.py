@@ -1,6 +1,7 @@
 """Governance policy file loading, validation, and evaluation."""
 
 from mcp_zero.governance.config import (
+    CorsConfig,
     IdentityProviderConfig,
     LoggingConfig,
     MaskingConfig,
@@ -31,6 +32,7 @@ from mcp_zero.governance.loader import (
 )
 
 __all__ = [
+    "CorsConfig",
     "EvaluationResult",
     "GovernanceHook",
     "GovernanceError",

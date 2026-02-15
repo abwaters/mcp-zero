@@ -191,6 +191,35 @@ class MaskingConfig:
 
 
 @dataclass(frozen=True)
+class CorsConfig:
+    """CORS configuration section.
+
+    Args:
+        allow_origins: List of allowed origins (required, non-empty).
+        allow_methods: HTTP methods to allow.
+        allow_headers: HTTP headers to allow.
+        allow_credentials: Whether to allow credentials.
+        max_age: Preflight cache duration in seconds.
+        expose_headers: Headers to expose to the browser.
+    """
+
+    allow_origins: list[str] = field(default_factory=list)
+    allow_methods: list[str] = field(default_factory=lambda: ["GET", "POST", "OPTIONS"])
+    allow_headers: list[str] = field(default_factory=lambda: ["Authorization", "Content-Type"])
+    allow_credentials: bool = False
+    max_age: int = 600
+    expose_headers: list[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if not self.allow_origins:
+            raise ValueError("cors.allow_origins must be a non-empty list")
+        if "*" in self.allow_origins and self.allow_credentials:
+            raise ValueError("cors.allow_origins=['*'] cannot be used with allow_credentials=True")
+        if self.max_age < 0:
+            raise ValueError(f"cors.max_age must be >= 0, got {self.max_age}")
+
+
+@dataclass(frozen=True)
 class PluginDeclaration:
     """A plugin declared in the policy file.
 
@@ -233,6 +262,7 @@ class PolicyConfig:
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     masking: MaskingConfig = field(default_factory=MaskingConfig)
     analytics: AnalyticsConfig | None = None
+    cors: CorsConfig | None = None
     plugins: list[PluginDeclaration] = field(default_factory=list)
 
     def __post_init__(self) -> None:

@@ -519,6 +519,81 @@ class TestHTTPSEnforcement:
         assert config.allow_insecure is True
 
 
+class TestCorsParsing:
+    def test_valid_cors_section(self, tmp_path):
+        data = _minimal_policy()
+        data["cors"] = {
+            "allow_origins": ["https://example.com"],
+            "allow_methods": ["GET", "POST"],
+            "allow_headers": ["Authorization"],
+            "allow_credentials": True,
+            "max_age": 300,
+            "expose_headers": ["X-Request-Id"],
+        }
+        path = tmp_path / "policy.yaml"
+        path.write_text(yaml.dump(data))
+        policy = load_policy_file(str(path))
+        assert policy.cors is not None
+        assert policy.cors.allow_origins == ["https://example.com"]
+        assert policy.cors.allow_methods == ["GET", "POST"]
+        assert policy.cors.allow_headers == ["Authorization"]
+        assert policy.cors.allow_credentials is True
+        assert policy.cors.max_age == 300
+        assert policy.cors.expose_headers == ["X-Request-Id"]
+
+    def test_missing_cors_section_defaults_none(self, tmp_path):
+        data = _minimal_policy()
+        path = tmp_path / "policy.yaml"
+        path.write_text(yaml.dump(data))
+        policy = load_policy_file(str(path))
+        assert policy.cors is None
+
+    def test_cors_not_mapping_raises(self, tmp_path):
+        data = _minimal_policy()
+        data["cors"] = "not a dict"
+        path = tmp_path / "policy.yaml"
+        path.write_text(yaml.dump(data))
+        with pytest.raises(PolicyValidationError, match="cors must be a mapping"):
+            load_policy_file(str(path))
+
+    def test_cors_empty_origins_raises(self, tmp_path):
+        data = _minimal_policy()
+        data["cors"] = {"allow_origins": []}
+        path = tmp_path / "policy.yaml"
+        path.write_text(yaml.dump(data))
+        with pytest.raises(PolicyValidationError, match="allow_origins must be a non-empty list"):
+            load_policy_file(str(path))
+
+    def test_cors_negative_max_age_raises(self, tmp_path):
+        data = _minimal_policy()
+        data["cors"] = {"allow_origins": ["https://example.com"], "max_age": -1}
+        path = tmp_path / "policy.yaml"
+        path.write_text(yaml.dump(data))
+        with pytest.raises(PolicyValidationError, match="max_age must be >= 0"):
+            load_policy_file(str(path))
+
+    def test_cors_wildcard_with_credentials_raises(self, tmp_path):
+        data = _minimal_policy()
+        data["cors"] = {"allow_origins": ["*"], "allow_credentials": True}
+        path = tmp_path / "policy.yaml"
+        path.write_text(yaml.dump(data))
+        with pytest.raises(PolicyValidationError, match="cannot be used with allow_credentials"):
+            load_policy_file(str(path))
+
+    def test_cors_defaults(self, tmp_path):
+        data = _minimal_policy()
+        data["cors"] = {"allow_origins": ["*"]}
+        path = tmp_path / "policy.yaml"
+        path.write_text(yaml.dump(data))
+        policy = load_policy_file(str(path))
+        assert policy.cors.allow_origins == ["*"]
+        assert policy.cors.allow_methods == ["GET", "POST", "OPTIONS"]
+        assert policy.cors.allow_headers == ["Authorization", "Content-Type"]
+        assert policy.cors.allow_credentials is False
+        assert policy.cors.max_age == 600
+        assert policy.cors.expose_headers == []
+
+
 class TestPluginsParsing:
     def test_valid_plugins_section(self, tmp_path):
         data = _minimal_policy()

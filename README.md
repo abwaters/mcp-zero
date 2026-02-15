@@ -162,8 +162,11 @@ The gateway starts on `0.0.0.0:8080` by default (configurable via `MCP_HOST` and
 | `ANALYTICS_GATEWAY_ID` | Unique gateway instance ID | _(auto-generated)_ |
 | `ANALYTICS_KEY_PREFIX` | Redis key prefix for analytics | `mcpgw` |
 | `ANALYTICS_RETENTION_SECONDS` | TTL for analytics keys in seconds | `3600` |
+| `MCP_CORS_ORIGINS` | Comma-separated allowed CORS origins (enables CORS when set) | _(none)_ |
+| `MCP_CORS_ALLOW_CREDENTIALS` | Allow credentials in CORS requests | `false` |
+| `MCP_CORS_MAX_AGE` | Preflight cache duration in seconds | `600` |
 
-When `MCP_POLICY_FILE` is set, its identity section takes precedence over `OKTA_*` env vars.
+When `MCP_POLICY_FILE` is set, its identity section takes precedence over `OKTA_*` env vars. CORS env vars override policy file CORS values.
 
 ### Policy File
 
@@ -174,8 +177,26 @@ Key concepts:
 - **`default`**: `deny` (recommended) or `allow`
 - **`servers`**: Downstream MCP server definitions (HTTP or stdio)
 - **`policies`**: Ordered rules evaluated top-down; explicit deny overrides allow
+- **`cors`**: CORS configuration for browser-based clients (disabled by default)
 - **`masking`**: Presidio entity detection configuration (legacy — see `plugins` below)
 - **`plugins`**: Plugin declarations for extensible pipeline hooks (masking, rate limiting, etc.)
+
+#### CORS Configuration
+
+Add a `cors` section to the policy file to allow browser-based MCP clients:
+
+```yaml
+cors:
+  allow_origins:
+    - https://web-ide.corp.com
+    - https://dashboard.corp.com
+  allow_methods: ["GET", "POST", "OPTIONS"]
+  allow_headers: ["Authorization", "Content-Type"]
+  allow_credentials: false
+  max_age: 600
+```
+
+CORS is disabled by default (fail-closed). Only `allow_origins` is required; all other fields have safe defaults. Environment variables (`MCP_CORS_ORIGINS`, `MCP_CORS_ALLOW_CREDENTIALS`, `MCP_CORS_MAX_AGE`) override policy file values.
 
 ### Server Types
 
