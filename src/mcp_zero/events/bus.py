@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
-from mcp_zero.audit.event import AuditEvent
 from mcp_zero.events.handler import EventHandler
+
+if TYPE_CHECKING:
+    from mcp_zero.audit.event import AuditEvent
 
 logger = logging.getLogger(__name__)
 
