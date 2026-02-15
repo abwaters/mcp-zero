@@ -88,15 +88,10 @@ def create_app(
                     proxy_server.mcp_server.create_initialization_options(),
                 )
 
-        async def handle_sse_messages(request: Request) -> None:
-            await sse_transport.handle_post_message(  # type: ignore[union-attr]
-                request.scope, request.receive, request._send
-            )
-
         routes.extend(
             [
                 Route("/mcp/sse", endpoint=handle_sse),
-                Route("/mcp/sse/messages/", endpoint=handle_sse_messages, methods=["POST"]),
+                Mount("/mcp/sse/messages", app=sse_transport.handle_post_message),  # type: ignore[union-attr]
             ]
         )
 

@@ -17,7 +17,7 @@ from mcp.types import TextContent, Tool
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
-from starlette.routing import Route
+from starlette.routing import Mount, Route
 
 
 def _build_server() -> Server:
@@ -103,9 +103,6 @@ def create_sse_app() -> Starlette:
         ) as streams:
             await server.run(streams[0], streams[1], server.create_initialization_options())
 
-    async def handle_messages(request: Request) -> None:
-        await sse_transport.handle_post_message(request.scope, request.receive, request._send)
-
     async def health(request: Request) -> PlainTextResponse:
         return PlainTextResponse("ok")
 
@@ -113,7 +110,7 @@ def create_sse_app() -> Starlette:
         routes=[
             Route("/health", endpoint=health),
             Route("/sse", endpoint=handle_sse),
-            Route("/messages/", endpoint=handle_messages, methods=["POST"]),
+            Mount("/messages", app=sse_transport.handle_post_message),
         ],
     )
 

@@ -33,7 +33,7 @@ class TestSSEEndpointsEnabled:
         inner_app = app._app
         route_paths = [r.path for r in inner_app.routes]
         assert "/mcp/sse" in route_paths
-        assert "/mcp/sse/messages/" in route_paths
+        assert "/mcp/sse/messages" in route_paths
 
     def test_sse_routes_present_when_explicitly_enabled(self):
         mgr = ServerManager(make_configs())
@@ -42,7 +42,7 @@ class TestSSEEndpointsEnabled:
         inner_app = app._app
         route_paths = [r.path for r in inner_app.routes]
         assert "/mcp/sse" in route_paths
-        assert "/mcp/sse/messages/" in route_paths
+        assert "/mcp/sse/messages" in route_paths
 
     def test_streamable_http_route_still_present(self):
         mgr = ServerManager(make_configs())
@@ -70,7 +70,7 @@ class TestSSEEndpointsDisabled:
         inner_app = app._app
         route_paths = [r.path for r in inner_app.routes]
         assert "/mcp/sse" not in route_paths
-        assert "/mcp/sse/messages/" not in route_paths
+        assert "/mcp/sse/messages" not in route_paths
 
     def test_streamable_http_route_still_present_when_sse_disabled(self):
         mgr = ServerManager(make_configs())
@@ -111,16 +111,19 @@ class TestSSEEndpointsDisabled:
 
 
 class TestSSEMessagesRoute:
-    """Tests for the SSE messages POST route configuration."""
+    """Tests for the SSE messages Mount configuration."""
 
-    def test_sse_messages_route_is_post_only(self):
+    def test_sse_messages_route_is_mount(self):
+        """Messages endpoint uses Mount (raw ASGI app) per MCP SDK convention."""
+        from starlette.routing import Mount
+
         mgr = ServerManager(make_configs())
         proxy = ProxyServer(mgr)
         app = create_app(proxy, mgr, sse_enabled=True)
         inner_app = app._app
         for route in inner_app.routes:
-            if hasattr(route, "path") and route.path == "/mcp/sse/messages/":
-                assert "POST" in route.methods
+            if hasattr(route, "path") and route.path == "/mcp/sse/messages":
+                assert isinstance(route, Mount)
                 break
         else:
             pytest.fail("SSE messages route not found")

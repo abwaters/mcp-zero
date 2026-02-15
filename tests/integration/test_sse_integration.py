@@ -85,7 +85,7 @@ async def _start_sse_server(port: int) -> asyncio.subprocess.Process:
                 resp = await client.get(url, timeout=2.0)
                 if resp.status_code == 200:
                     return proc
-            except (httpx.ConnectError, httpx.ReadError, OSError):
+            except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadError, OSError):
                 continue
     raise RuntimeError(f"SSE test server failed to start on port {port}")
 
