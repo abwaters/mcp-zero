@@ -572,6 +572,14 @@ class TestCorsParsing:
         with pytest.raises(PolicyValidationError, match="max_age must be >= 0"):
             load_policy_file(str(path))
 
+    def test_cors_wildcard_with_credentials_raises(self, tmp_path):
+        data = _minimal_policy()
+        data["cors"] = {"allow_origins": ["*"], "allow_credentials": True}
+        path = tmp_path / "policy.yaml"
+        path.write_text(yaml.dump(data))
+        with pytest.raises(PolicyValidationError, match="cannot be used with allow_credentials"):
+            load_policy_file(str(path))
+
     def test_cors_defaults(self, tmp_path):
         data = _minimal_policy()
         data["cors"] = {"allow_origins": ["*"]}
