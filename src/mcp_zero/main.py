@@ -386,6 +386,8 @@ def run() -> None:
         bool(os.environ.get("OKTA_ISSUER", "")) and bool(os.environ.get("OKTA_AUDIENCE", ""))
     )
 
+    sse_enabled = _env_bool("MCP_SSE_ENABLED", default=True)
+
     server_manager = ServerManager(configs)
     proxy_server = ProxyServer(
         server_manager,
@@ -394,7 +396,12 @@ def run() -> None:
         policy_engine=policy_engine,
         identity_required=identity_enabled,
     )
-    app = create_app(proxy_server, server_manager, analytics_collector=analytics_collector)
+    app = create_app(
+        proxy_server,
+        server_manager,
+        analytics_collector=analytics_collector,
+        sse_enabled=sse_enabled,
+    )
 
     host = os.environ.get("MCP_HOST", "0.0.0.0")
     port = int(os.environ.get("MCP_PORT", "8080"))
@@ -429,12 +436,13 @@ def run() -> None:
 
     logger.info(
         "Gateway ready: servers=%d, identity=%s, governance=%s, "
-        "analytics=%s, plugins=%d, log_format=%s, log_level=%s",
+        "analytics=%s, plugins=%d, sse=%s, log_format=%s, log_level=%s",
         len(configs),
         "enabled" if identity_active else "disabled",
         "enabled (%d rules)" % len(policy_config.policies) if policy_config else "disabled",
         "enabled" if analytics_active else "disabled",
         plugin_count,
+        "enabled" if sse_enabled else "disabled",
         fmt,
         logging.getLogger().level,
     )

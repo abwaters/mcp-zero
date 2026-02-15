@@ -13,12 +13,14 @@ from mcp_zero.transport.errors import (
 from mcp_zero.transport.factory import TransportFactory
 from mcp_zero.transport.http import StreamableHTTPTransport
 from mcp_zero.transport.process_manager import ProcessStatus, StdioProcessManager
+from mcp_zero.transport.sse import SSETransport
 from mcp_zero.transport.stdio import StdioTransport
 
 __all__ = [
     "MCPTransport",
     "ProcessError",
     "ProcessStatus",
+    "SSETransport",
     "ServerConfig",
     "SessionError",
     "StdioProcessManager",
