@@ -15,7 +15,7 @@ from mcp_zero.analytics.collector import AnalyticsCollector
 from mcp_zero.analytics.config import RedisConfig
 from mcp_zero.audit import AuditHook
 from mcp_zero.events.bus import EventBus
-from mcp_zero.governance import CorsConfig, GovernanceHook, PolicyConfig, PolicyEngine
+from mcp_zero.governance import CorsConfig, GovernanceHook, PolicyConfig, PolicyEffect, PolicyEngine
 from mcp_zero.governance.errors import GovernanceError
 from mcp_zero.governance.loader import (
     convert_to_identity_config,
@@ -40,6 +40,16 @@ logger = logging.getLogger(__name__)
 def _is_insecure_allowed() -> bool:
     """Return True when ``MCP_ALLOW_INSECURE`` env var is truthy."""
     return os.environ.get("MCP_ALLOW_INSECURE", "").strip().lower() in ("1", "true", "yes")
+
+
+def _is_strict_security() -> bool:
+    """Return True when ``MCP_STRICT_SECURITY`` env var is truthy.
+
+    When enabled, the gateway requires **both** identity and governance
+    to be active (ENFORCING posture).  This is a production hardening
+    flag that is not overridable by ``MCP_ALLOW_INSECURE``.
+    """
+    return os.environ.get("MCP_STRICT_SECURITY", "").strip().lower() in ("1", "true", "yes")
 
 
 def _load_server_configs() -> list[ServerConfig]:
@@ -476,6 +486,43 @@ def run() -> None:
     identity_enabled = identity_config is not None or (
         bool(os.environ.get("OKTA_ISSUER", "")) and bool(os.environ.get("OKTA_AUDIENCE", ""))
     )
+    governance_active = policy_config is not None
+
+    # Strict security mode (MZ-02): require BOTH identity AND governance
+    # to be active (ENFORCING posture).  This is a production hardening
+    # flag — not overridable by MCP_ALLOW_INSECURE.
+    if _is_strict_security():
+        if not identity_enabled or not governance_active:
+            missing = []
+            if not identity_enabled:
+                missing.append("identity")
+            if not governance_active:
+                missing.append("governance")
+            logger.critical(
+                "REFUSING TO START: MCP_STRICT_SECURITY requires both identity and "
+                "governance to be active (ENFORCING posture), but %s is not configured. "
+                "Provide a policy file with identity section, or unset MCP_STRICT_SECURITY.",
+                " and ".join(missing),
+            )
+            sys.exit(78)
+
+    # Block default:allow + no identity (MZ-02): a policy that defaults to
+    # 'allow' with no identity validation means every anonymous request is
+    # permitted — the gateway *appears* governed but is effectively wide open.
+    if (
+        policy_config is not None
+        and policy_config.default == PolicyEffect.ALLOW
+        and not identity_enabled
+        and not _is_insecure_allowed()
+    ):
+        logger.critical(
+            "REFUSING TO START: Policy has 'default: allow' but no identity validation "
+            "is configured. Every anonymous request would be allowed — this is almost "
+            "certainly a deployment mistake. Configure identity (OKTA_ISSUER + OKTA_AUDIENCE "
+            "or policy identity section), change the default to 'deny', or set "
+            "MCP_ALLOW_INSECURE=true (dev/testing only)."
+        )
+        sys.exit(78)
 
     # Build OBO auth provider when Okta OBO env vars are set (F-04)
     auth_provider = _build_obo_provider(configs, identity_enabled=identity_enabled)
@@ -515,7 +562,6 @@ def run() -> None:
     plugin_count = len(plugin_manager.loaded_plugins)
 
     identity_active = pipeline is not None and identity_config is not None
-    governance_active = policy_config is not None
 
     # Emit security posture at appropriate level
     if identity_active and governance_active:
