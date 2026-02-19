@@ -23,6 +23,49 @@ from mcp_zero.proxy.server_manager import ServerManager
 logger = logging.getLogger(__name__)
 
 
+class _CORSLoggingMiddleware:
+    """CORSMiddleware wrapper that logs a WARNING for every rejected origin."""
+
+    def __init__(self, app: ASGIApp, cors_config: CorsConfig) -> None:
+        self._inner: ASGIApp = CORSMiddleware(
+            app,
+            allow_origins=cors_config.allow_origins,
+            allow_methods=cors_config.allow_methods,
+            allow_headers=cors_config.allow_headers,
+            allow_credentials=cors_config.allow_credentials,
+            max_age=cors_config.max_age,
+            expose_headers=cors_config.expose_headers,
+        )
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self._inner(scope, receive, send)
+            return
+
+        headers = dict(scope.get("headers", []))
+        origin = headers.get(b"origin", b"").decode()
+        if not origin:
+            await self._inner(scope, receive, send)
+            return
+
+        warned = False
+
+        async def capturing_send(message) -> None:  # noqa: ANN001
+            nonlocal warned
+            if (
+                not warned
+                and isinstance(message, dict)
+                and message.get("type") == "http.response.start"
+            ):
+                warned = True
+                header_names = {name for name, _ in message.get("headers", [])}
+                if b"access-control-allow-origin" not in header_names:
+                    logger.warning("CORS rejected request from disallowed origin: %s", origin)
+            await send(message)
+
+        await self._inner(scope, receive, capturing_send)
+
+
 def create_app(
     proxy_server: ProxyServer,
     server_manager: ServerManager,
@@ -105,15 +148,7 @@ def create_app(
     wrapped: ASGIApp = AuthHeaderMiddleware(app)
 
     if cors_config is not None:
-        wrapped = CORSMiddleware(
-            wrapped,
-            allow_origins=cors_config.allow_origins,
-            allow_methods=cors_config.allow_methods,
-            allow_headers=cors_config.allow_headers,
-            allow_credentials=cors_config.allow_credentials,
-            max_age=cors_config.max_age,
-            expose_headers=cors_config.expose_headers,
-        )
+        wrapped = _CORSLoggingMiddleware(wrapped, cors_config)
         logger.info("CORS middleware enabled: origins=%s", cors_config.allow_origins)
 
     return wrapped
