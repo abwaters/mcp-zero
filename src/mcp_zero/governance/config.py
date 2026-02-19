@@ -56,6 +56,7 @@ class ServerDefinition:
         command: Command for stdio transport.
         args: Arguments for stdio command.
         env: Environment variables for stdio.
+        headers: Custom HTTP headers for outbound requests (http/sse only).
         token_exchange: Whether to enable OBO token exchange.
         target_audience: OBO target audience.
         required_scopes: OBO required scopes.
@@ -67,6 +68,7 @@ class ServerDefinition:
     command: str | None = None
     args: list[str] = field(default_factory=list)
     env: dict[str, str] = field(default_factory=dict)
+    headers: dict[str, str] = field(default_factory=dict)
     token_exchange: bool = False
     target_audience: str | None = None
     required_scopes: list[str] = field(default_factory=list)

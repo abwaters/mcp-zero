@@ -62,6 +62,9 @@ class StreamableHTTPTransport(MCPTransport):
                 stack = AsyncExitStack()
 
                 headers: dict[str, str] = {}
+                # Static headers from server config (lowest priority)
+                if self._config.headers:
+                    headers.update(self._config.headers)
                 if context:
                     headers["X-Correlation-ID"] = context.correlation_id
                     if context.trace_id is not None:

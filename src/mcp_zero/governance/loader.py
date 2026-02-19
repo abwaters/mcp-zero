@@ -110,6 +110,8 @@ def convert_to_server_configs(policy: PolicyConfig) -> list[ServerConfig]:
             kwargs["args"] = list(server.args)
         if server.env:
             kwargs["env"] = dict(server.env)
+        if server.headers:
+            kwargs["headers"] = dict(server.headers)
         if server.target_audience is not None:
             kwargs["target_audience"] = server.target_audience
         if server.required_scopes:
@@ -297,6 +299,7 @@ def _build_server(data: dict, index: int) -> ServerDefinition:
             command=data.get("command"),
             args=data.get("args", []),
             env=data.get("env", {}),
+            headers=data.get("headers", {}),
             token_exchange=data.get("token_exchange", False),
             target_audience=data.get("target_audience"),
             required_scopes=data.get("required_scopes", []),

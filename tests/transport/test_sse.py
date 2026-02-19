@@ -210,6 +210,56 @@ class TestSSETransport:
         assert t.state == TransportState.DISCONNECTED
 
     @pytest.mark.asyncio
+    async def test_connect_with_config_headers(self, mock_sdk):
+        cfg = ServerConfig(
+            name="test-sse",
+            transport=TransportType.SSE,
+            url="https://localhost:8080/sse",
+            headers={"X-Api-Key": "secret", "X-Custom": "value"},
+        )
+        t = SSETransport(cfg)
+
+        await t.connect()
+
+        call_kwargs = mock_sdk["client"].call_args[1]
+        assert call_kwargs["headers"]["X-Api-Key"] == "secret"
+        assert call_kwargs["headers"]["X-Custom"] == "value"
+
+    @pytest.mark.asyncio
+    async def test_connect_config_headers_merged_with_context(self, mock_sdk):
+        cfg = ServerConfig(
+            name="test-sse",
+            transport=TransportType.SSE,
+            url="https://localhost:8080/sse",
+            headers={"X-Api-Key": "secret"},
+        )
+        ctx = RequestContext(correlation_id="c-1", trace_id="t-1")
+        t = SSETransport(cfg)
+
+        await t.connect(context=ctx)
+
+        call_kwargs = mock_sdk["client"].call_args[1]
+        assert call_kwargs["headers"]["X-Api-Key"] == "secret"
+        assert call_kwargs["headers"]["X-Correlation-ID"] == "c-1"
+        assert call_kwargs["headers"]["X-Trace-ID"] == "t-1"
+
+    @pytest.mark.asyncio
+    async def test_connect_runtime_headers_override_config_headers(self, mock_sdk):
+        cfg = ServerConfig(
+            name="test-sse",
+            transport=TransportType.SSE,
+            url="https://localhost:8080/sse",
+            headers={"Authorization": "Bearer static-token"},
+        )
+        t = SSETransport(cfg)
+
+        await t.connect(auth_token="obo-token")
+
+        call_kwargs = mock_sdk["client"].call_args[1]
+        # Runtime auth_token should override the static config Authorization
+        assert call_kwargs["headers"]["Authorization"] == "Bearer obo-token"
+
+    @pytest.mark.asyncio
     async def test_reconnect_after_disconnect(self, mock_sdk):
         cfg = make_sse_config()
         t = SSETransport(cfg)

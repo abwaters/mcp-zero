@@ -236,6 +236,75 @@ class TestStreamableHTTPTransport:
         assert exc_info.value.correlation_id == "err-cid"
 
     @pytest.mark.asyncio
+    async def test_connect_with_config_headers(self, mock_sdk):
+        cfg = ServerConfig(
+            name="test-http",
+            transport=TransportType.HTTP,
+            url="https://localhost:8080",
+            headers={"X-Api-Key": "secret", "X-Custom": "value"},
+        )
+        t = StreamableHTTPTransport(cfg)
+
+        with patch("mcp_zero.transport.http.httpx.AsyncClient") as mock_httpx:
+            mock_httpx_inst = AsyncMock()
+            mock_httpx_inst.__aenter__ = AsyncMock(return_value=mock_httpx_inst)
+            mock_httpx_inst.__aexit__ = AsyncMock(return_value=False)
+            mock_httpx.return_value = mock_httpx_inst
+
+            await t.connect()
+
+            mock_httpx.assert_called_once()
+            call_kwargs = mock_httpx.call_args[1]
+            assert call_kwargs["headers"]["X-Api-Key"] == "secret"
+            assert call_kwargs["headers"]["X-Custom"] == "value"
+
+    @pytest.mark.asyncio
+    async def test_connect_config_headers_merged_with_context(self, mock_sdk):
+        cfg = ServerConfig(
+            name="test-http",
+            transport=TransportType.HTTP,
+            url="https://localhost:8080",
+            headers={"X-Api-Key": "secret"},
+        )
+        ctx = RequestContext(correlation_id="c-1", trace_id="t-1")
+        t = StreamableHTTPTransport(cfg)
+
+        with patch("mcp_zero.transport.http.httpx.AsyncClient") as mock_httpx:
+            mock_httpx_inst = AsyncMock()
+            mock_httpx_inst.__aenter__ = AsyncMock(return_value=mock_httpx_inst)
+            mock_httpx_inst.__aexit__ = AsyncMock(return_value=False)
+            mock_httpx.return_value = mock_httpx_inst
+
+            await t.connect(context=ctx)
+
+            call_kwargs = mock_httpx.call_args[1]
+            assert call_kwargs["headers"]["X-Api-Key"] == "secret"
+            assert call_kwargs["headers"]["X-Correlation-ID"] == "c-1"
+            assert call_kwargs["headers"]["X-Trace-ID"] == "t-1"
+
+    @pytest.mark.asyncio
+    async def test_connect_runtime_headers_override_config_headers(self, mock_sdk):
+        cfg = ServerConfig(
+            name="test-http",
+            transport=TransportType.HTTP,
+            url="https://localhost:8080",
+            headers={"Authorization": "Bearer static-token"},
+        )
+        t = StreamableHTTPTransport(cfg)
+
+        with patch("mcp_zero.transport.http.httpx.AsyncClient") as mock_httpx:
+            mock_httpx_inst = AsyncMock()
+            mock_httpx_inst.__aenter__ = AsyncMock(return_value=mock_httpx_inst)
+            mock_httpx_inst.__aexit__ = AsyncMock(return_value=False)
+            mock_httpx.return_value = mock_httpx_inst
+
+            await t.connect(auth_token="obo-token")
+
+            call_kwargs = mock_httpx.call_args[1]
+            # Runtime auth_token should override the static config Authorization
+            assert call_kwargs["headers"]["Authorization"] == "Bearer obo-token"
+
+    @pytest.mark.asyncio
     async def test_context_manager(self, mock_sdk):
         cfg = make_http_config()
         async with StreamableHTTPTransport(cfg) as t:
