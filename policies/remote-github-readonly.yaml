@@ -1,0 +1,50 @@
+# Policy: remote-github-readonly
+# GitHub's official remote MCP server via Streamable HTTP — read-only access.
+# Blocks all mutating operations (create, update, delete, merge, push, etc.).
+# Usage: scripts\run-policy.bat remote-github-readonly
+
+version: 1
+default: deny
+
+servers:
+  - name: github
+    transport: http
+    url: https://api.githubcopilot.com/mcp/
+
+policies:
+  - id: read-only
+    description: Allow only read, list, and search tools on the GitHub remote server
+    effect: allow
+    mcp_servers:
+      - name: github
+        tools:
+          - get_code_scanning_alert
+          - get_commit
+          - get_file_contents
+          - get_issue
+          - get_issue_comments
+          - get_me
+          - get_notification_details
+          - get_pull_request
+          - get_pull_request_comments
+          - get_pull_request_diff
+          - get_pull_request_files
+          - get_pull_request_reviews
+          - get_pull_request_status
+          - get_secret_scanning_alert
+          - get_tag
+          - list_branches
+          - list_code_scanning_alerts
+          - list_commits
+          - list_issues
+          - list_notifications
+          - list_pull_requests
+          - list_secret_scanning_alerts
+          - list_tags
+          - search_code
+          - search_issues
+          - search_repositories
+          - search_users
+
+logging:
+  level: DEBUG
