@@ -5,6 +5,7 @@ import dataclasses
 import pytest
 
 from mcp_zero.governance.config import (
+    CorsConfig,
     IdentityProviderConfig,
     LoggingConfig,
     MaskingConfig,
@@ -328,3 +329,61 @@ class TestPolicyConfigPlugins:
         pc = PolicyConfig(version=1, plugins=[pd])
         assert len(pc.plugins) == 1
         assert pc.plugins[0].name == "p1"
+
+
+class TestCorsConfig:
+    def test_valid_minimal(self):
+        cfg = CorsConfig(allow_origins=["https://example.com"])
+        assert cfg.allow_origins == ["https://example.com"]
+
+    def test_defaults(self):
+        cfg = CorsConfig(allow_origins=["https://example.com"])
+        assert cfg.allow_methods == ["GET", "POST", "OPTIONS"]
+        assert cfg.allow_headers == ["Authorization", "Content-Type"]
+        assert cfg.allow_credentials is False
+        assert cfg.max_age == 600
+        assert cfg.expose_headers == []
+
+    def test_empty_origins_raises(self):
+        with pytest.raises(ValueError, match="cors.allow_origins must be a non-empty list"):
+            CorsConfig(allow_origins=[])
+
+    def test_no_origins_raises(self):
+        with pytest.raises(ValueError, match="cors.allow_origins must be a non-empty list"):
+            CorsConfig()
+
+    def test_wildcard_with_credentials_raises(self):
+        with pytest.raises(
+            ValueError, match=r"cors.allow_origins=\['\*'\] cannot be used with allow_credentials"
+        ):
+            CorsConfig(allow_origins=["*"], allow_credentials=True)
+
+    def test_wildcard_without_credentials_valid(self):
+        cfg = CorsConfig(allow_origins=["*"])
+        assert cfg.allow_origins == ["*"]
+        assert cfg.allow_credentials is False
+
+    def test_max_age_zero_valid(self):
+        cfg = CorsConfig(allow_origins=["https://example.com"], max_age=0)
+        assert cfg.max_age == 0
+
+    def test_negative_max_age_raises(self):
+        with pytest.raises(ValueError, match="cors.max_age must be >= 0"):
+            CorsConfig(allow_origins=["https://example.com"], max_age=-1)
+
+    def test_frozen(self):
+        cfg = CorsConfig(allow_origins=["https://example.com"])
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            cfg.allow_origins = ["https://other.com"]  # type: ignore[misc]
+
+    def test_multiple_origins(self):
+        origins = ["https://a.com", "https://b.com", "https://c.com"]
+        cfg = CorsConfig(allow_origins=origins)
+        assert cfg.allow_origins == origins
+
+    def test_custom_expose_headers(self):
+        cfg = CorsConfig(
+            allow_origins=["https://example.com"],
+            expose_headers=["X-Correlation-ID", "X-Request-ID"],
+        )
+        assert cfg.expose_headers == ["X-Correlation-ID", "X-Request-ID"]
