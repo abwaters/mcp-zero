@@ -163,3 +163,76 @@ class TestServerConfig:
     def test_stdio_unaffected_by_https_check(self):
         cfg = ServerConfig(name="local", transport=TransportType.STDIO, command="python")
         assert cfg.allow_insecure is False
+
+    def test_headers_default_empty(self):
+        cfg = ServerConfig(
+            name="remote", transport=TransportType.HTTP, url="https://localhost:8080"
+        )
+        assert cfg.headers == {}
+
+    def test_headers_accepted_for_http(self):
+        cfg = ServerConfig(
+            name="remote",
+            transport=TransportType.HTTP,
+            url="https://localhost:8080",
+            headers={"Authorization": "Bearer token123", "X-Api-Key": "key456"},
+        )
+        assert cfg.headers == {"Authorization": "Bearer token123", "X-Api-Key": "key456"}
+
+    def test_headers_accepted_for_sse(self):
+        cfg = ServerConfig(
+            name="remote",
+            transport=TransportType.SSE,
+            url="https://localhost:8080/sse",
+            headers={"Authorization": "Bearer tok"},
+        )
+        assert cfg.headers == {"Authorization": "Bearer tok"}
+
+    def test_headers_rejected_for_stdio(self):
+        with pytest.raises(ValueError, match="headers are not supported for stdio"):
+            ServerConfig(
+                name="local",
+                transport=TransportType.STDIO,
+                command="python",
+                headers={"X-Api-Key": "secret"},
+            )
+
+    def test_headers_env_var_expansion(self, monkeypatch):
+        monkeypatch.setenv("MY_TOKEN", "expanded-value")
+        cfg = ServerConfig(
+            name="remote",
+            transport=TransportType.HTTP,
+            url="https://localhost:8080",
+            headers={"Authorization": "Bearer ${MY_TOKEN}"},
+        )
+        assert cfg.headers["Authorization"] == "Bearer expanded-value"
+
+    def test_headers_env_var_missing_expands_to_empty(self, monkeypatch):
+        monkeypatch.delenv("NONEXISTENT_VAR", raising=False)
+        cfg = ServerConfig(
+            name="remote",
+            transport=TransportType.HTTP,
+            url="https://localhost:8080",
+            headers={"Authorization": "Bearer ${NONEXISTENT_VAR}"},
+        )
+        assert cfg.headers["Authorization"] == "Bearer "
+
+    def test_headers_multiple_env_vars(self, monkeypatch):
+        monkeypatch.setenv("TOKEN_TYPE", "Bearer")
+        monkeypatch.setenv("TOKEN_VALUE", "abc123")
+        cfg = ServerConfig(
+            name="remote",
+            transport=TransportType.HTTP,
+            url="https://localhost:8080",
+            headers={"Authorization": "${TOKEN_TYPE} ${TOKEN_VALUE}"},
+        )
+        assert cfg.headers["Authorization"] == "Bearer abc123"
+
+    def test_headers_no_env_var_syntax_unchanged(self):
+        cfg = ServerConfig(
+            name="remote",
+            transport=TransportType.HTTP,
+            url="https://localhost:8080",
+            headers={"X-Static": "plain-value"},
+        )
+        assert cfg.headers["X-Static"] == "plain-value"

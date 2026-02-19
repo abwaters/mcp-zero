@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import os
+import re
 from dataclasses import dataclass, field
 from enum import StrEnum
 
 from mcp_zero.url_validation import require_https
+
+_ENV_VAR_RE = re.compile(r"\$\{([^}]+)\}")
 
 
 class TransportType(StrEnum):
@@ -45,6 +49,9 @@ class ServerConfig:
     target_audience: str | None = None
     required_scopes: list[str] = field(default_factory=list)
 
+    # Custom HTTP headers (http/sse only)
+    headers: dict[str, str] = field(default_factory=dict)
+
     # Security
     allow_insecure: bool = False
 
@@ -62,6 +69,15 @@ class ServerConfig:
         elif self.transport == TransportType.STDIO:
             if not self.command:
                 raise ValueError(f"stdio transport for '{self.name}' requires 'command'")
+
+        if self.headers:
+            if self.transport == TransportType.STDIO:
+                raise ValueError(f"headers are not supported for stdio transport ('{self.name}')")
+            # Expand ${ENV_VAR} references in header values
+            expanded = {}
+            for key, value in self.headers.items():
+                expanded[key] = _ENV_VAR_RE.sub(lambda m: os.environ.get(m.group(1), ""), value)
+            object.__setattr__(self, "headers", expanded)
 
         if self.token_exchange:
             if self.transport == TransportType.STDIO:
