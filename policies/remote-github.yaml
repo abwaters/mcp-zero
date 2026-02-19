@@ -1,0 +1,22 @@
+# Policy: remote-github
+# GitHub's official remote MCP server via Streamable HTTP.
+# Usage: scripts\run-policy.bat remote-github
+
+version: 1
+default: allow
+
+servers:
+  - name: github
+    transport: http
+    url: https://api.githubcopilot.com/mcp/
+
+policies:
+  - id: allow-all
+    description: Allow all tools on the GitHub remote server
+    effect: allow
+    mcp_servers:
+      - name: github
+        tools: ["*"]
+
+logging:
+  level: DEBUG
