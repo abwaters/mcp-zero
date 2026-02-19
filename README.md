@@ -172,6 +172,18 @@ When `MCP_POLICY_FILE` is set, its identity section takes precedence over `OKTA_
 
 See [`docs/enterprise_mcp_gateway_policy_schema_example.md`](docs/enterprise_mcp_gateway_policy_schema_example.md) for a full annotated example.
 
+Working examples are available in the [`policies/`](policies/) directory:
+
+| File | Description |
+|------|-------------|
+| [`policies/everything.yaml`](policies/everything.yaml) | stdio transport with `@modelcontextprotocol/server-everything` |
+| [`policies/filesystem.yaml`](policies/filesystem.yaml) | stdio transport with `@modelcontextprotocol/server-filesystem` |
+| [`policies/filesystem-redacted.yaml`](policies/filesystem-redacted.yaml) | Filesystem server with Presidio masking plugin |
+| [`policies/time.yaml`](policies/time.yaml) | stdio transport with `@modelcontextprotocol/server-time` |
+| [`policies/all.yaml`](policies/all.yaml) | Multiple stdio servers combined |
+| [`policies/remote-github.yaml`](policies/remote-github.yaml) | Remote GitHub MCP server via Streamable HTTP |
+| [`policies/remote-github-readonly.yaml`](policies/remote-github-readonly.yaml) | GitHub server with explicit read-only tool allowlist |
+
 Key concepts:
 - **`version`**: Must be `1`
 - **`default`**: `deny` (recommended) or `allow`
