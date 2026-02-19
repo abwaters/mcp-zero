@@ -9,6 +9,8 @@ servers:
   - name: github
     transport: http
     url: https://api.githubcopilot.com/mcp/
+    headers:
+      Authorization: "Bearer ${GITHUB_TOKEN}"
 
 policies:
   - id: allow-all
