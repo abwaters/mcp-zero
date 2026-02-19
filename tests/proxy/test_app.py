@@ -8,7 +8,7 @@ from starlette.applications import Starlette
 from starlette.middleware.cors import CORSMiddleware
 
 from mcp_zero.governance.config import CorsConfig
-from mcp_zero.proxy.app import create_app
+from mcp_zero.proxy.app import _CORSLoggingMiddleware, create_app
 from mcp_zero.proxy.middleware import AuthHeaderMiddleware
 from mcp_zero.proxy.proxy_server import ProxyServer
 from mcp_zero.proxy.server_manager import ServerManager
@@ -64,9 +64,10 @@ class TestCreateApp:
         proxy = ProxyServer(mgr)
         cors = CorsConfig(allow_origins=["https://example.com"])
         app = create_app(proxy, mgr, cors_config=cors)
-        assert isinstance(app, CORSMiddleware)
-        # CORSMiddleware wraps the AuthHeaderMiddleware
-        assert isinstance(app.app, AuthHeaderMiddleware)
+        assert isinstance(app, _CORSLoggingMiddleware)
+        # The inner CORSMiddleware wraps the AuthHeaderMiddleware
+        assert isinstance(app._inner, CORSMiddleware)
+        assert isinstance(app._inner.app, AuthHeaderMiddleware)
 
     @pytest.mark.asyncio
     async def test_cors_preflight_returns_correct_headers(self):

@@ -23,11 +23,11 @@ def make_configs():
     ]
 
 
-def _make_app(cors_config=None):
+def _make_app(cors_config=None, sse_enabled=True):
     """Create an ASGI app with optional CORS config."""
     mgr = ServerManager(make_configs())
     proxy = ProxyServer(mgr)
-    return create_app(proxy, mgr, cors_config=cors_config)
+    return create_app(proxy, mgr, cors_config=cors_config, sse_enabled=sse_enabled)
 
 
 class TestCorsDisabled:
@@ -231,6 +231,42 @@ class TestCorsMultipleOrigins:
         assert "access-control-allow-origin" not in resp.headers
 
 
+class TestCorsSSEEndpoint:
+    @pytest.mark.asyncio
+    async def test_sse_preflight_allowed_origin(self):
+        """CORS middleware covers the legacy /mcp/sse endpoint."""
+        cors = CorsConfig(allow_origins=["https://example.com"])
+        app = _make_app(cors_config=cors, sse_enabled=True)
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://testserver"
+        ) as client:
+            resp = await client.options(
+                "/mcp/sse",
+                headers={
+                    "Origin": "https://example.com",
+                    "Access-Control-Request-Method": "GET",
+                },
+            )
+        assert resp.headers["access-control-allow-origin"] == "https://example.com"
+
+    @pytest.mark.asyncio
+    async def test_sse_preflight_disallowed_origin(self):
+        """Disallowed origin is rejected on /mcp/sse preflight."""
+        cors = CorsConfig(allow_origins=["https://allowed.com"])
+        app = _make_app(cors_config=cors, sse_enabled=True)
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://testserver"
+        ) as client:
+            resp = await client.options(
+                "/mcp/sse",
+                headers={
+                    "Origin": "https://evil.com",
+                    "Access-Control-Request-Method": "GET",
+                },
+            )
+        assert "access-control-allow-origin" not in resp.headers
+
+
 class TestCorsLogging:
     def test_cors_enabled_logs_info(self, caplog):
         cors = CorsConfig(allow_origins=["https://example.com", "https://other.com"])
@@ -238,3 +274,14 @@ class TestCorsLogging:
             _make_app(cors_config=cors)
         assert any("CORS middleware enabled" in r.message for r in caplog.records)
         assert any("https://example.com" in r.message for r in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_rejected_origin_logs_warning(self, caplog):
+        cors = CorsConfig(allow_origins=["https://allowed.com"])
+        app = _make_app(cors_config=cors)
+        with caplog.at_level(logging.WARNING, logger="mcp_zero.proxy.app"):
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://testserver"
+            ) as client:
+                await client.get("/mcp", headers={"Origin": "https://evil.com"})
+        assert any("CORS rejected" in r.message and "evil.com" in r.message for r in caplog.records)
