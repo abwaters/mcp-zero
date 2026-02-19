@@ -14,7 +14,7 @@ from mcp_zero.proxy.obo_auth import OBOAuthProvider, ServerOBOSettings
 
 def _make_raw_token(sub: str = "user-1") -> str:
     """Create an unsigned JWT for testing (signature not checked by OBOAuthProvider)."""
-    return pyjwt.encode({"sub": sub}, key="secret", algorithm="HS256")
+    return pyjwt.encode({"sub": sub}, key="secret-key-for-testing-only-32by", algorithm="HS256")
 
 
 def _make_context(
