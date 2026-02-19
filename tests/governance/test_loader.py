@@ -374,6 +374,52 @@ class TestToolPatternValidation:
             load_policy_file(str(path))
 
 
+class TestServerHeaders:
+    def test_headers_parsed_from_yaml(self, tmp_path):
+        data = _minimal_policy()
+        data["servers"] = [
+            {
+                "name": "github",
+                "transport": "http",
+                "url": "https://api.github.com/mcp/",
+                "headers": {"Authorization": "Bearer ghp_xxxx", "X-Custom": "value"},
+            },
+        ]
+        data["policies"][0]["mcp_servers"] = [{"name": "github", "tools": ["*"]}]
+        path = tmp_path / "policy.yaml"
+        path.write_text(yaml.dump(data))
+        policy = load_policy_file(str(path))
+        assert policy.servers[0].headers == {
+            "Authorization": "Bearer ghp_xxxx",
+            "X-Custom": "value",
+        }
+
+    def test_headers_default_empty(self, tmp_path):
+        path = tmp_path / "policy.yaml"
+        path.write_text(yaml.dump(_minimal_policy()))
+        policy = load_policy_file(str(path))
+        assert policy.servers[0].headers == {}
+
+    def test_headers_converted_to_server_config(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("GH_TOKEN", "ghp_test123")
+        data = _minimal_policy()
+        data["servers"] = [
+            {
+                "name": "github",
+                "transport": "http",
+                "url": "https://api.github.com/mcp/",
+                "headers": {"Authorization": "Bearer ${GH_TOKEN}"},
+            },
+        ]
+        data["policies"][0]["mcp_servers"] = [{"name": "github", "tools": ["*"]}]
+        path = tmp_path / "policy.yaml"
+        path.write_text(yaml.dump(data))
+        policy = load_policy_file(str(path))
+        configs = convert_to_server_configs(policy)
+        # Env var expansion happens in ServerConfig.__post_init__
+        assert configs[0].headers == {"Authorization": "Bearer ghp_test123"}
+
+
 class TestConvertToServerConfigs:
     def test_http_server(self, tmp_path):
         path = tmp_path / "policy.yaml"
