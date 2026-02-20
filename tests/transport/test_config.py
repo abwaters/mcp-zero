@@ -207,15 +207,15 @@ class TestServerConfig:
         )
         assert cfg.headers["Authorization"] == "Bearer expanded-value"
 
-    def test_headers_env_var_missing_expands_to_empty(self, monkeypatch):
+    def test_headers_env_var_missing_raises(self, monkeypatch):
         monkeypatch.delenv("NONEXISTENT_VAR", raising=False)
-        cfg = ServerConfig(
-            name="remote",
-            transport=TransportType.HTTP,
-            url="https://localhost:8080",
-            headers={"Authorization": "Bearer ${NONEXISTENT_VAR}"},
-        )
-        assert cfg.headers["Authorization"] == "Bearer "
+        with pytest.raises(ValueError, match="unset environment variable.*NONEXISTENT_VAR"):
+            ServerConfig(
+                name="remote",
+                transport=TransportType.HTTP,
+                url="https://localhost:8080",
+                headers={"Authorization": "Bearer ${NONEXISTENT_VAR}"},
+            )
 
     def test_headers_multiple_env_vars(self, monkeypatch):
         monkeypatch.setenv("TOKEN_TYPE", "Bearer")
