@@ -386,7 +386,11 @@ def run() -> None:
     if _is_insecure_allowed():
         logger.warning("MCP_ALLOW_INSECURE is set — HTTPS enforcement disabled (dev only)")
 
-    configs, identity_config, policy_config = _load_policy_and_configs()
+    try:
+        configs, identity_config, policy_config = _load_policy_and_configs()
+    except ValueError as exc:
+        logger.critical("REFUSING TO START: %s", exc)
+        sys.exit(78)
 
     # If policy specifies logging overrides, apply them
     if policy_config and policy_config.logging:

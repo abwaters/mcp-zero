@@ -76,7 +76,22 @@ class ServerConfig:
             # Expand ${ENV_VAR} references in header values
             expanded = {}
             for key, value in self.headers.items():
-                expanded[key] = _ENV_VAR_RE.sub(lambda m: os.environ.get(m.group(1), ""), value)
+                missing: list[str] = []
+
+                def _expand(m: re.Match[str], *, _missing: list[str] = missing) -> str:
+                    var = m.group(1)
+                    val = os.environ.get(var)
+                    if val is None:
+                        _missing.append(var)
+                        return ""
+                    return val
+
+                expanded[key] = _ENV_VAR_RE.sub(_expand, value)
+                if missing:
+                    raise ValueError(
+                        f"Header '{key}' for server '{self.name}' references unset"
+                        f" environment variable(s): {', '.join(missing)}"
+                    )
             object.__setattr__(self, "headers", expanded)
 
         if self.token_exchange:

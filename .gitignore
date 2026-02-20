@@ -17,7 +17,7 @@ htmlcov/
 .pytest_cache/
 
 # Environment
-.env
+.env*
 
 # Data
 .data/
