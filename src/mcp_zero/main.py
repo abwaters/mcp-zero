@@ -37,9 +37,25 @@ from mcp_zero.transport.config import ServerConfig, TransportType
 logger = logging.getLogger(__name__)
 
 
-def _is_insecure_allowed() -> bool:
-    """Return True when ``MCP_ALLOW_INSECURE`` env var is truthy."""
-    return os.environ.get("MCP_ALLOW_INSECURE", "").strip().lower() in ("1", "true", "yes")
+def _skip_tls_validation() -> bool:
+    """Return True when ``MCP_SKIP_TLS_VALIDATION`` env var is truthy.
+
+    Disables HTTPS enforcement on upstream server URLs, identity issuer URLs,
+    and OBO token endpoint URLs.  Use only for local development with HTTP
+    servers.  Never set in production.
+    """
+    return os.environ.get("MCP_SKIP_TLS_VALIDATION", "").strip().lower() in ("1", "true", "yes")
+
+
+def _relax_startup_checks() -> bool:
+    """Return True when ``MCP_RELAX_STARTUP_CHECKS`` env var is truthy.
+
+    Disables fail-closed startup guards: allows the gateway to start without
+    an identity provider, governance policy, or with known misconfigurations
+    (e.g. missing OKTA_AUDIENCE, default:allow without identity).  Use only
+    for local development and testing.  Never set in production.
+    """
+    return os.environ.get("MCP_RELAX_STARTUP_CHECKS", "").strip().lower() in ("1", "true", "yes")
 
 
 def _is_strict_security() -> bool:
@@ -47,7 +63,8 @@ def _is_strict_security() -> bool:
 
     When enabled, the gateway requires **both** identity and governance
     to be active (ENFORCING posture).  This is a production hardening
-    flag that is not overridable by ``MCP_ALLOW_INSECURE``.
+    flag that is not overridable by ``MCP_SKIP_TLS_VALIDATION`` or
+    ``MCP_RELAX_STARTUP_CHECKS``.
     """
     return os.environ.get("MCP_STRICT_SECURITY", "").strip().lower() in ("1", "true", "yes")
 
@@ -65,7 +82,7 @@ def _load_server_configs() -> list[ServerConfig]:
             name="default",
             transport=TransportType.HTTP,
             url=url,
-            allow_insecure=_is_insecure_allowed(),
+            allow_insecure=_skip_tls_validation(),
         )
     ]
 
@@ -236,7 +253,7 @@ def _build_pipeline(
 
         if issuer and audience:
             identity_config = IdentityConfig(
-                issuer=issuer, audience=audience, allow_insecure=_is_insecure_allowed()
+                issuer=issuer, audience=audience, allow_insecure=_skip_tls_validation()
             )
         elif issuer and not audience:
             logger.warning(
@@ -309,7 +326,7 @@ def _build_obo_provider(
 
     Raises:
         SystemExit: If servers require OBO but identity pipeline is disabled
-            and ``MCP_ALLOW_INSECURE`` is not set.
+            and ``MCP_RELAX_STARTUP_CHECKS`` is not set.
     """
     token_endpoint = os.environ.get("OKTA_TOKEN_ENDPOINT", "")
     client_id = os.environ.get("OKTA_CLIENT_ID", "")
@@ -319,13 +336,13 @@ def _build_obo_provider(
 
     # Validate that OBO-enabled servers have a functioning identity pipeline
     if obo_servers and not identity_enabled:
-        if not _is_insecure_allowed():
+        if not _relax_startup_checks():
             logger.critical(
                 "REFUSING TO START: Server(s) %s have token_exchange enabled but the "
                 "identity pipeline is disabled. OBO token exchange requires authenticated "
                 "user tokens — without identity validation, OBO will always fail. "
                 "Configure identity (OKTA_ISSUER + OKTA_AUDIENCE or policy identity "
-                "section), or set MCP_ALLOW_INSECURE=true (dev only).",
+                "section), or set MCP_RELAX_STARTUP_CHECKS=true (dev only).",
                 obo_servers,
             )
             sys.exit(78)
@@ -364,7 +381,7 @@ def _build_obo_provider(
         token_endpoint=token_endpoint,
         client_id=client_id,
         client_secret=client_secret,
-        allow_insecure=_is_insecure_allowed(),
+        allow_insecure=_skip_tls_validation(),
     )
     obo_client = OBOClient(obo_config)
     provider = OBOAuthProvider(obo_client, server_settings)
@@ -383,8 +400,12 @@ def run() -> None:
         fmt=os.environ.get("LOG_FORMAT", "json").strip().lower(),
     )
 
-    if _is_insecure_allowed():
-        logger.warning("MCP_ALLOW_INSECURE is set — HTTPS enforcement disabled (dev only)")
+    if _skip_tls_validation():
+        logger.warning("MCP_SKIP_TLS_VALIDATION is set — HTTPS enforcement disabled (dev only)")
+    if _relax_startup_checks():
+        logger.warning(
+            "MCP_RELAX_STARTUP_CHECKS is set — startup security guards disabled (dev only)"
+        )
 
     try:
         configs, identity_config, policy_config = _load_policy_and_configs()
@@ -424,22 +445,22 @@ def run() -> None:
     atexit.register(plugin_manager.teardown_all)
 
     # Fail-closed: refuse to start without security controls unless explicitly
-    # opted out via MCP_ALLOW_INSECURE.  This prevents accidentally running
+    # opted out via MCP_RELAX_STARTUP_CHECKS.  This prevents accidentally running
     # the gateway in production without authn/authz (see issue #52).
     if pipeline is None:
-        if not _is_insecure_allowed():
+        if not _relax_startup_checks():
             logger.critical(
                 "REFUSING TO START: No identity provider or policy file configured. "
                 "The gateway would run without authentication, authorization, or "
                 "data protection — this is not safe for production. "
-                "Set MCP_POLICY_FILE to a policy file, or set MCP_ALLOW_INSECURE=true "
+                "Set MCP_POLICY_FILE to a policy file, or set MCP_RELAX_STARTUP_CHECKS=true "
                 "to start without security controls (dev/testing only)."
             )
             sys.exit(78)  # EX_CONFIG per sysexits.h
         else:
             logger.warning(
-                "INSECURE MODE: Starting without authentication or authorization. "
-                "MCP_ALLOW_INSECURE is set — all tool calls will be proxied without "
+                "UNPROTECTED MODE: Starting without authentication or authorization. "
+                "MCP_RELAX_STARTUP_CHECKS is set — all tool calls will be proxied without "
                 "identity validation, governance checks, or data masking. "
                 "Do NOT use this in production."
             )
@@ -453,13 +474,13 @@ def run() -> None:
         and identity_config is None
         and os.environ.get("OKTA_ISSUER", "")
         and not os.environ.get("OKTA_AUDIENCE", "")
-        and not _is_insecure_allowed()
+        and not _relax_startup_checks()
     ):
         logger.critical(
             "REFUSING TO START: OKTA_ISSUER is set but OKTA_AUDIENCE is missing. "
             "The gateway has a policy file but cannot enable identity validation — "
             "this is a misconfiguration. Set OKTA_AUDIENCE, or remove OKTA_ISSUER, "
-            "or set MCP_ALLOW_INSECURE=true to start without identity (dev only)."
+            "or set MCP_RELAX_STARTUP_CHECKS=true to start without identity (dev only)."
         )
         sys.exit(78)
 
@@ -495,14 +516,14 @@ def run() -> None:
         policy_config is not None
         and policy_config.default == PolicyEffect.ALLOW
         and not identity_enabled
-        and not _is_insecure_allowed()
+        and not _relax_startup_checks()
     ):
         logger.critical(
             "REFUSING TO START: Policy has 'default: allow' but no identity validation "
             "is configured. Every anonymous request would be allowed — this is almost "
             "certainly a deployment mistake. Configure identity (OKTA_ISSUER + OKTA_AUDIENCE "
             "or policy identity section), change the default to 'deny', or set "
-            "MCP_ALLOW_INSECURE=true (dev/testing only)."
+            "MCP_RELAX_STARTUP_CHECKS=true (dev/testing only)."
         )
         sys.exit(78)
 
@@ -557,10 +578,10 @@ def run() -> None:
             "Policy rules will evaluate with anonymous identity.",
             len(policy_config.policies),
         )
-    elif _is_insecure_allowed():
+    elif _relax_startup_checks():
         logger.warning(
-            "SECURITY POSTURE [INSECURE]: identity=disabled, governance=disabled. "
-            "All requests proxied without security controls (MCP_ALLOW_INSECURE=true).",
+            "SECURITY POSTURE [UNPROTECTED]: identity=disabled, governance=disabled. "
+            "All requests proxied without security controls (MCP_RELAX_STARTUP_CHECKS=true).",
         )
 
     cors_active = cors_config is not None

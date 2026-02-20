@@ -34,5 +34,6 @@ if exist "policies\%POLICY_NAME%.yaml" (
 
 echo Using policy: %MCP_POLICY_FILE%
 call .venv\Scripts\activate.bat
-set MCP_ALLOW_INSECURE=true
+set MCP_SKIP_TLS_VALIDATION=true
+set MCP_RELAX_STARTUP_CHECKS=true
 python -m mcp_zero %1 %2 %3 %4 %5 %6 %7 %8 %9 
