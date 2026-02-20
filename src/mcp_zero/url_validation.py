@@ -16,5 +16,6 @@ def require_https(url: str, field_name: str) -> None:
     if not url.lower().startswith("https://"):
         raise ValueError(
             f"{field_name} must use https:// (got {url!r}). "
-            f"Set allow_insecure=True to permit http:// for local development."
+            f"Set allow_insecure=True in the policy file, or set "
+            f"MCP_SKIP_TLS_VALIDATION=true to permit http:// for local development."
         )
