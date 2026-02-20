@@ -34,4 +34,5 @@ if exist "policies\%POLICY_NAME%.yaml" (
 
 echo Using policy: %MCP_POLICY_FILE%
 call .venv\Scripts\activate.bat
-python -m mcp_zero %1 %2 %3 %4 %5 %6 %7 %8 %9
+set MCP_ALLOW_INSECURE=true
+python -m mcp_zero %1 %2 %3 %4 %5 %6 %7 %8 %9 
