@@ -12,10 +12,11 @@ from mcp_zero.main import (
     _build_cors_config,
     _build_obo_provider,
     _build_pipeline,
-    _is_insecure_allowed,
     _is_strict_security,
     _load_policy_and_configs,
     _load_server_configs,
+    _relax_startup_checks,
+    _skip_tls_validation,
     run,
 )
 from mcp_zero.pipeline import Pipeline
@@ -25,34 +26,64 @@ from mcp_zero.proxy.middleware import AuthHeaderMiddleware
 from mcp_zero.transport.config import ServerConfig, TransportType
 
 
-class TestIsInsecureAllowed:
+class TestSkipTlsValidation:
     def test_not_set(self, monkeypatch):
-        monkeypatch.delenv("MCP_ALLOW_INSECURE", raising=False)
-        assert _is_insecure_allowed() is False
+        monkeypatch.delenv("MCP_SKIP_TLS_VALIDATION", raising=False)
+        assert _skip_tls_validation() is False
 
     def test_empty(self, monkeypatch):
-        monkeypatch.setenv("MCP_ALLOW_INSECURE", "")
-        assert _is_insecure_allowed() is False
+        monkeypatch.setenv("MCP_SKIP_TLS_VALIDATION", "")
+        assert _skip_tls_validation() is False
 
     def test_truthy_1(self, monkeypatch):
-        monkeypatch.setenv("MCP_ALLOW_INSECURE", "1")
-        assert _is_insecure_allowed() is True
+        monkeypatch.setenv("MCP_SKIP_TLS_VALIDATION", "1")
+        assert _skip_tls_validation() is True
 
     def test_truthy_true(self, monkeypatch):
-        monkeypatch.setenv("MCP_ALLOW_INSECURE", "true")
-        assert _is_insecure_allowed() is True
+        monkeypatch.setenv("MCP_SKIP_TLS_VALIDATION", "true")
+        assert _skip_tls_validation() is True
 
     def test_truthy_yes(self, monkeypatch):
-        monkeypatch.setenv("MCP_ALLOW_INSECURE", "yes")
-        assert _is_insecure_allowed() is True
+        monkeypatch.setenv("MCP_SKIP_TLS_VALIDATION", "yes")
+        assert _skip_tls_validation() is True
 
     def test_truthy_case_insensitive(self, monkeypatch):
-        monkeypatch.setenv("MCP_ALLOW_INSECURE", "TRUE")
-        assert _is_insecure_allowed() is True
+        monkeypatch.setenv("MCP_SKIP_TLS_VALIDATION", "TRUE")
+        assert _skip_tls_validation() is True
 
     def test_falsy_value(self, monkeypatch):
-        monkeypatch.setenv("MCP_ALLOW_INSECURE", "0")
-        assert _is_insecure_allowed() is False
+        monkeypatch.setenv("MCP_SKIP_TLS_VALIDATION", "0")
+        assert _skip_tls_validation() is False
+
+
+class TestRelaxStartupChecks:
+    def test_not_set(self, monkeypatch):
+        monkeypatch.delenv("MCP_RELAX_STARTUP_CHECKS", raising=False)
+        assert _relax_startup_checks() is False
+
+    def test_empty(self, monkeypatch):
+        monkeypatch.setenv("MCP_RELAX_STARTUP_CHECKS", "")
+        assert _relax_startup_checks() is False
+
+    def test_truthy_1(self, monkeypatch):
+        monkeypatch.setenv("MCP_RELAX_STARTUP_CHECKS", "1")
+        assert _relax_startup_checks() is True
+
+    def test_truthy_true(self, monkeypatch):
+        monkeypatch.setenv("MCP_RELAX_STARTUP_CHECKS", "true")
+        assert _relax_startup_checks() is True
+
+    def test_truthy_yes(self, monkeypatch):
+        monkeypatch.setenv("MCP_RELAX_STARTUP_CHECKS", "yes")
+        assert _relax_startup_checks() is True
+
+    def test_truthy_case_insensitive(self, monkeypatch):
+        monkeypatch.setenv("MCP_RELAX_STARTUP_CHECKS", "TRUE")
+        assert _relax_startup_checks() is True
+
+    def test_falsy_value(self, monkeypatch):
+        monkeypatch.setenv("MCP_RELAX_STARTUP_CHECKS", "0")
+        assert _relax_startup_checks() is False
 
 
 class TestLoadServerConfigs:
@@ -67,15 +98,15 @@ class TestLoadServerConfigs:
         assert configs[0].name == "default"
         assert configs[0].url == "https://upstream:9090"
 
-    def test_http_url_rejected_without_allow_insecure(self, monkeypatch):
+    def test_http_url_rejected_without_skip_tls(self, monkeypatch):
         monkeypatch.setenv("MCP_UPSTREAM_URL", "http://upstream:9090")
-        monkeypatch.delenv("MCP_ALLOW_INSECURE", raising=False)
+        monkeypatch.delenv("MCP_SKIP_TLS_VALIDATION", raising=False)
         with pytest.raises(ValueError, match="must use https://"):
             _load_server_configs()
 
-    def test_http_url_allowed_with_allow_insecure(self, monkeypatch):
+    def test_http_url_allowed_with_skip_tls(self, monkeypatch):
         monkeypatch.setenv("MCP_UPSTREAM_URL", "http://upstream:9090")
-        monkeypatch.setenv("MCP_ALLOW_INSECURE", "1")
+        monkeypatch.setenv("MCP_SKIP_TLS_VALIDATION", "1")
         configs = _load_server_configs()
         assert len(configs) == 1
         assert configs[0].url == "http://upstream:9090"
@@ -287,7 +318,7 @@ class TestRun:
         monkeypatch.delenv("MCP_POLICY_FILE", raising=False)
         monkeypatch.delenv("OKTA_ISSUER", raising=False)
         monkeypatch.delenv("OKTA_AUDIENCE", raising=False)
-        monkeypatch.delenv("MCP_ALLOW_INSECURE", raising=False)
+        monkeypatch.delenv("MCP_RELAX_STARTUP_CHECKS", raising=False)
 
         with pytest.raises(SystemExit) as exc_info:
             run()
@@ -309,17 +340,17 @@ class TestRun:
         monkeypatch.setenv("MCP_POLICY_FILE", str(path))
         monkeypatch.setenv("OKTA_ISSUER", "https://okta.example.com")
         monkeypatch.delenv("OKTA_AUDIENCE", raising=False)
-        monkeypatch.delenv("MCP_ALLOW_INSECURE", raising=False)
+        monkeypatch.delenv("MCP_RELAX_STARTUP_CHECKS", raising=False)
 
         with pytest.raises(SystemExit) as exc_info:
             run()
         assert exc_info.value.code == 78
 
     @patch("mcp_zero.main.uvicorn")
-    def test_partial_identity_allowed_with_allow_insecure(
+    def test_partial_identity_allowed_with_relax_startup_checks(
         self, mock_uvicorn, monkeypatch, tmp_path
     ):
-        """Partial identity config starts when MCP_ALLOW_INSECURE is set."""
+        """Partial identity config starts when MCP_RELAX_STARTUP_CHECKS is set."""
         policy = {
             "version": 1,
             "default": "deny",
@@ -334,7 +365,7 @@ class TestRun:
         monkeypatch.setenv("MCP_POLICY_FILE", str(path))
         monkeypatch.setenv("OKTA_ISSUER", "https://okta.example.com")
         monkeypatch.delenv("OKTA_AUDIENCE", raising=False)
-        monkeypatch.setenv("MCP_ALLOW_INSECURE", "true")
+        monkeypatch.setenv("MCP_RELAX_STARTUP_CHECKS", "true")
         monkeypatch.setenv("MCP_HOST", "127.0.0.1")
         monkeypatch.setenv("MCP_PORT", "9999")
 
@@ -343,13 +374,13 @@ class TestRun:
         mock_uvicorn.run.assert_called_once()
 
     @patch("mcp_zero.main.uvicorn")
-    def test_starts_insecure_with_allow_insecure(self, mock_uvicorn, monkeypatch):
-        """Gateway starts without config when MCP_ALLOW_INSECURE is set."""
+    def test_starts_unprotected_with_relax_startup_checks(self, mock_uvicorn, monkeypatch):
+        """Gateway starts without config when MCP_RELAX_STARTUP_CHECKS is set."""
         monkeypatch.delenv("MCP_UPSTREAM_URL", raising=False)
         monkeypatch.delenv("MCP_POLICY_FILE", raising=False)
         monkeypatch.delenv("OKTA_ISSUER", raising=False)
         monkeypatch.delenv("OKTA_AUDIENCE", raising=False)
-        monkeypatch.setenv("MCP_ALLOW_INSECURE", "true")
+        monkeypatch.setenv("MCP_RELAX_STARTUP_CHECKS", "true")
         monkeypatch.setenv("MCP_HOST", "127.0.0.1")
         monkeypatch.setenv("MCP_PORT", "9999")
 
@@ -463,7 +494,7 @@ class TestBuildOBOProviderValidation:
 
     def test_refuses_obo_without_identity(self, monkeypatch):
         """OBO servers without identity pipeline should fail-closed."""
-        monkeypatch.delenv("MCP_ALLOW_INSECURE", raising=False)
+        monkeypatch.delenv("MCP_RELAX_STARTUP_CHECKS", raising=False)
         monkeypatch.setenv("OKTA_TOKEN_ENDPOINT", "https://okta/token")
         monkeypatch.setenv("OKTA_CLIENT_ID", "client-id")
         monkeypatch.setenv("OKTA_CLIENT_SECRET", "secret")
@@ -472,9 +503,9 @@ class TestBuildOBOProviderValidation:
             _build_obo_provider([self._obo_server_config()], identity_enabled=False)
         assert exc_info.value.code == 78
 
-    def test_allows_obo_without_identity_when_insecure(self, monkeypatch):
-        """OBO servers without identity allowed when MCP_ALLOW_INSECURE is set."""
-        monkeypatch.setenv("MCP_ALLOW_INSECURE", "true")
+    def test_allows_obo_without_identity_when_relax_startup_checks(self, monkeypatch):
+        """OBO servers without identity allowed when MCP_RELAX_STARTUP_CHECKS is set."""
+        monkeypatch.setenv("MCP_RELAX_STARTUP_CHECKS", "true")
         monkeypatch.setenv("OKTA_TOKEN_ENDPOINT", "https://okta/token")
         monkeypatch.setenv("OKTA_CLIENT_ID", "client-id")
         monkeypatch.setenv("OKTA_CLIENT_SECRET", "secret")
@@ -485,7 +516,7 @@ class TestBuildOBOProviderValidation:
 
     def test_obo_with_identity_enabled(self, monkeypatch):
         """OBO servers with identity pipeline should work normally."""
-        monkeypatch.delenv("MCP_ALLOW_INSECURE", raising=False)
+        monkeypatch.delenv("MCP_RELAX_STARTUP_CHECKS", raising=False)
         monkeypatch.setenv("OKTA_TOKEN_ENDPOINT", "https://okta/token")
         monkeypatch.setenv("OKTA_CLIENT_ID", "client-id")
         monkeypatch.setenv("OKTA_CLIENT_SECRET", "secret")
@@ -495,7 +526,7 @@ class TestBuildOBOProviderValidation:
 
     def test_no_obo_servers_skips_validation(self, monkeypatch):
         """Non-OBO servers should not trigger identity validation."""
-        monkeypatch.delenv("MCP_ALLOW_INSECURE", raising=False)
+        monkeypatch.delenv("MCP_RELAX_STARTUP_CHECKS", raising=False)
         config = ServerConfig(
             name="api",
             transport=TransportType.HTTP,
@@ -555,7 +586,7 @@ class TestStrictSecurityStartup:
         monkeypatch.setenv("MCP_STRICT_SECURITY", "true")
         monkeypatch.delenv("OKTA_ISSUER", raising=False)
         monkeypatch.delenv("OKTA_AUDIENCE", raising=False)
-        monkeypatch.delenv("MCP_ALLOW_INSECURE", raising=False)
+        monkeypatch.delenv("MCP_RELAX_STARTUP_CHECKS", raising=False)
 
         with pytest.raises(SystemExit) as exc_info:
             run()
@@ -568,7 +599,7 @@ class TestStrictSecurityStartup:
         monkeypatch.setenv("MCP_STRICT_SECURITY", "true")
         monkeypatch.setenv("OKTA_ISSUER", "https://okta.example.com")
         monkeypatch.setenv("OKTA_AUDIENCE", "my-app")
-        monkeypatch.setenv("MCP_ALLOW_INSECURE", "true")  # bypass pipeline-is-None check
+        monkeypatch.setenv("MCP_RELAX_STARTUP_CHECKS", "true")  # bypass pipeline-is-None check
 
         with pytest.raises(SystemExit) as exc_info:
             run()
@@ -595,7 +626,7 @@ class TestStrictSecurityStartup:
 
         monkeypatch.setenv("MCP_POLICY_FILE", str(path))
         monkeypatch.setenv("MCP_STRICT_SECURITY", "true")
-        monkeypatch.delenv("MCP_ALLOW_INSECURE", raising=False)
+        monkeypatch.delenv("MCP_RELAX_STARTUP_CHECKS", raising=False)
         monkeypatch.setenv("MCP_HOST", "127.0.0.1")
         monkeypatch.setenv("MCP_PORT", "9999")
 
@@ -623,17 +654,17 @@ class TestDefaultAllowWithoutIdentity:
         monkeypatch.setenv("MCP_POLICY_FILE", str(path))
         monkeypatch.delenv("OKTA_ISSUER", raising=False)
         monkeypatch.delenv("OKTA_AUDIENCE", raising=False)
-        monkeypatch.delenv("MCP_ALLOW_INSECURE", raising=False)
+        monkeypatch.delenv("MCP_RELAX_STARTUP_CHECKS", raising=False)
 
         with pytest.raises(SystemExit) as exc_info:
             run()
         assert exc_info.value.code == 78
 
     @patch("mcp_zero.main.uvicorn")
-    def test_default_allow_without_identity_allowed_insecure(
+    def test_default_allow_without_identity_allowed_relax_startup_checks(
         self, mock_uvicorn, monkeypatch, tmp_path
     ):
-        """Policy with default:allow and no identity starts when MCP_ALLOW_INSECURE is set."""
+        """Policy with default:allow and no identity starts when MCP_RELAX_STARTUP_CHECKS is set."""
         policy = {
             "version": 1,
             "default": "allow",
@@ -648,7 +679,7 @@ class TestDefaultAllowWithoutIdentity:
         monkeypatch.setenv("MCP_POLICY_FILE", str(path))
         monkeypatch.delenv("OKTA_ISSUER", raising=False)
         monkeypatch.delenv("OKTA_AUDIENCE", raising=False)
-        monkeypatch.setenv("MCP_ALLOW_INSECURE", "true")
+        monkeypatch.setenv("MCP_RELAX_STARTUP_CHECKS", "true")
         monkeypatch.setenv("MCP_HOST", "127.0.0.1")
         monkeypatch.setenv("MCP_PORT", "9999")
 
@@ -676,7 +707,7 @@ class TestDefaultAllowWithoutIdentity:
         path.write_text(yaml.dump(policy))
 
         monkeypatch.setenv("MCP_POLICY_FILE", str(path))
-        monkeypatch.delenv("MCP_ALLOW_INSECURE", raising=False)
+        monkeypatch.delenv("MCP_RELAX_STARTUP_CHECKS", raising=False)
         monkeypatch.setenv("MCP_HOST", "127.0.0.1")
         monkeypatch.setenv("MCP_PORT", "9999")
 
