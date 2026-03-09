@@ -21,11 +21,11 @@ Enterprise AI Tool ──► MCP Gateway ──► MCP Servers
 
 ## Features
 
-- **Identity** — Okta OAuth2 JWT validation (OBO token exchange requires explicit configuration - see docs/okta_obo_for_an_enterprise_mcp_gateway.md)
+- **Identity** — Okta OAuth2 JWT validation with configurable claim mapping (`user_id`, `email`, `groups`)
 - **Governance** — YAML policy files with default-deny rules scoped to server, tool, user, and group
 - **Data Protection** — Inline PII and secret masking via Microsoft Presidio on both inputs and outputs
 - **Auditing** — Structured logs with user attribution, correlation IDs, and policy decisions
-- **Transport** — Streamable HTTP for remote servers, stdio for gateway-managed local processes. Both HTTP and stdio transports enforce the same governance, masking, and audit policies through a unified pipeline.
+- **Transport** — Streamable HTTP (primary), legacy inbound SSE (optional), and upstream HTTP/SSE/stdio server connectivity under the same policy pipeline
 - **Pipeline** — Hook-based request lifecycle with ordered execution and short-circuit support
 - **Plugins** — Entry-point based plugin architecture for extending the pipeline with custom hooks (masking, rate limiting, metrics, etc.)
 
@@ -39,17 +39,20 @@ Enterprise AI Tool ──► MCP Gateway ──► MCP Servers
 
 **IMPORTANT**: The gateway is designed with fail-closed defaults but requires proper configuration to enforce security:
 
-- **Policy file recommended**: Set `MCP_POLICY_FILE` to enable governance, identity validation, masking, and audit logging
-- **Default-deny**: When policy file is configured, all requests are denied by default unless explicitly allowed
-- **Insecure mode**: Setting `MCP_ALLOW_INSECURE=true` disables HTTPS enforcement and allows startup without policy/identity configuration (dev/testing only)
-- **Masking dependencies**: PII/secret masking requires Presidio dependencies to be installed (included in standard installation)
+- **Policy file strongly recommended**: Set `MCP_POLICY_FILE` to enable governance and plugin configuration.
+- **Fail-closed startup by default**: If neither identity nor a policy file is configured, the gateway exits with code 78.
+- **Development-only bypasses**:
+  - `MCP_RELAX_STARTUP_CHECKS=true` allows startup without security controls.
+  - `MCP_SKIP_TLS_VALIDATION=true` allows non-HTTPS identity/server/OBO URLs.
+- **Strict production hardening**: `MCP_STRICT_SECURITY=true` requires both identity and governance to be active.
+- **Masking dependencies**: Presidio masking requires `presidio-analyzer` and `presidio-anonymizer` (included in default install).
 
-**Known Limitations** (see [security review](docs/security_review_mcp_gateway.md) for details):
-- Without a policy file, the gateway runs in legacy mode with no identity/governance/masking enforcement (F-03: OPEN)
-- Tool discovery (`list_tools`) does not enforce per-user authorization (F-06: documented limitation)
-- OBO token exchange requires explicit environment variables (`OKTA_TOKEN_ENDPOINT`, `OKTA_CLIENT_ID`, `OKTA_CLIENT_SECRET`) and per-server configuration
+**Known Limitations** (see [security review](docs/security_review_mcp_gateway.md) for broader analysis):
+- Legacy/development modes can still be enabled intentionally via `MCP_RELAX_STARTUP_CHECKS=true` and/or `MCP_SKIP_TLS_VALIDATION=true`; these must not be used in production.
+- OBO token exchange requires explicit environment variables (`OKTA_TOKEN_ENDPOINT`, `OKTA_CLIENT_ID`, `OKTA_CLIENT_SECRET`) and per-server policy configuration.
+- Inbound SSE support remains available for compatibility but is deprecated; disable with `MCP_SSE_ENABLED=false` if not needed.
 
-Never run with `MCP_ALLOW_INSECURE=true` in production environments.
+Never run production deployments with relaxed startup checks or TLS validation disabled.
 
 ### Install
 
@@ -124,6 +127,8 @@ export MCP_POLICY_FILE=policy.yaml
 
 # Start the gateway
 python -m mcp_zero
+# or
+mcp-zero
 ```
 
 Or with environment variables for simple setups:
@@ -147,7 +152,10 @@ The gateway starts on `0.0.0.0:8080` by default (configurable via `MCP_HOST` and
 | `MCP_UPSTREAM_URL` | Single upstream MCP server URL (legacy fallback) | _(none)_ |
 | `MCP_HOST` | Host to bind the gateway | `0.0.0.0` |
 | `MCP_PORT` | Port to bind the gateway | `8080` |
-| `MCP_ALLOW_INSECURE` | Allow running without security controls (dev/testing only) | `false` |
+| `MCP_RELAX_STARTUP_CHECKS` | Allow startup without required security controls (dev/testing only) | `false` |
+| `MCP_SKIP_TLS_VALIDATION` | Allow `http://` issuer/server/OBO URLs (dev/testing only) | `false` |
+| `MCP_STRICT_SECURITY` | Require both identity and governance at startup | `false` |
+| `MCP_SSE_ENABLED` | Enable deprecated inbound SSE endpoints (`/mcp/sse*`) | `true` |
 | `LOG_LEVEL` | Logging level (DEBUG, INFO, WARNING, ERROR) | `INFO` |
 | `LOG_FORMAT` | Log output format (`json` or `text`) | `json` |
 | `OKTA_ISSUER` | Okta token issuer URL (fallback if no policy file) | _(none)_ |
@@ -166,7 +174,7 @@ The gateway starts on `0.0.0.0:8080` by default (configurable via `MCP_HOST` and
 | `MCP_CORS_ALLOW_CREDENTIALS` | Allow credentials in CORS requests | `false` |
 | `MCP_CORS_MAX_AGE` | Preflight cache duration in seconds | `600` |
 
-When `MCP_POLICY_FILE` is set, its identity section takes precedence over `OKTA_*` env vars. CORS env vars override policy file CORS values.
+When `MCP_POLICY_FILE` is set, its identity section takes precedence over `OKTA_*` env vars. CORS and analytics env vars override policy values.
 
 ### Policy File
 
@@ -220,7 +228,27 @@ servers:
     url: https://mcp-server.corp/mcp
 ```
 
-**stdio servers** — local processes spawned and managed by the gateway. Note: stdio servers are spawned dynamically and cannot currently be configured via policy files.
+**SSE servers** — remote MCP servers over SSE:
+```yaml
+servers:
+  - name: legacy-sse-server
+    transport: sse
+    url: https://mcp-server.corp/sse
+```
+
+**stdio servers** — local processes spawned and managed by the gateway (configured in policy files):
+```yaml
+servers:
+  - name: local-filesystem
+    transport: stdio
+    command: npx
+    args:
+      - -y
+      - "@modelcontextprotocol/server-filesystem"
+      - /workspace
+    env:
+      NODE_ENV: production
+```
 
 ## Development
 
