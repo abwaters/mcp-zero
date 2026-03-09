@@ -24,6 +24,7 @@ mcp-zero = "mcp_zero.main:run"
 
 [project.entry-points."mcp_zero.plugins"]
 presidio-masking = "mcp_zero.plugins.presidio_masking:PresidioMaskingPlugin"
+github-repo-filter = "mcp_zero.plugins.github_repo_filter:GitHubRepoFilterPlugin"
 
 [project.optional-dependencies]
 dev = [
