@@ -6,6 +6,7 @@ A new mcp-zero plugin (`github-repo-filter`) that enforces repository-level allo
 
 1. **Input filtering** — blocks tool calls that target a disallowed repo (tools with `owner`/`repo` arguments)
 2. **Output filtering** — strips results from disallowed repos out of search responses (search tools that return multi-repo results)
+3. **Tool description augmentation** — optionally rewrites `tools/list` responses to inject policy context into tool descriptions, so the LLM knows what's filtered *before* making a call
 
 The two modes (`allowlist` / `blocklist`) are mutually exclusive — configuration validation rejects any policy that specifies both.
 
@@ -67,6 +68,27 @@ The plugin registers a single `LifecycleHook` that acts at two hook points:
 - **Blocklist mode**: If the resolved `owner/repo` matches any entry in the configured list, it is denied/filtered. Non-matching repos are allowed.
 - Repo entries support **fnmatch-style patterns** (e.g., `myorg/*` matches all repos in `myorg`). This uses Python's `fnmatch.fnmatch` with case-insensitive comparison.
 
+### Tool Description Augmentation (Optional)
+
+When `augment_descriptions` is enabled, the plugin intercepts `tools/list` responses from upstream servers and appends policy context to the `description` field of Category 1 and Category 2 tools. This gives the LLM advance knowledge of what's filtered, avoiding wasted tool calls and enabling it to proactively inform the user (e.g., "that repository is restricted by policy").
+
+**How it works:**
+
+1. The plugin adds a third hook point: **`on_post_masking`** for `tools/list` responses (reuses the existing hook, with method-level branching on whether the response is a `tools/list` result or a tool call result).
+2. For each tool in the response whose name is in Category 1 or Category 2, the plugin appends a policy summary to the tool's `description`.
+3. The appended text varies by mode:
+   - **Allowlist**: `"\n\nNote: This tool is restricted to the following repositories: repo1, repo2, org/*. Requests targeting other repositories will be denied."`
+   - **Blocklist with `augment_blocklist_detail: true`**: `"\n\nNote: The following repositories are excluded: repo1, repo2. Do not attempt to access these repositories."`
+   - **Blocklist with `augment_blocklist_detail: false`** (default): `"\n\nNote: Some repositories are restricted by policy. Requests targeting restricted repositories will be denied."`
+4. If `augment_message` is set, it **replaces** the auto-generated text entirely, giving operators full control over the wording.
+
+**Context window considerations:**
+
+- If the repo list exceeds 10 entries, the plugin summarizes instead of enumerating (e.g., "restricted to repositories in the `acme` org and 3 additional repos") unless `augment_message` is set.
+- Operators who need precise control should use `augment_message` to craft a concise, hand-written note.
+
+**Important: augmentation is a UX optimization, not a security control.** The LLM may ignore description text. Hard enforcement via input/output filtering remains the authoritative layer and is always active regardless of this setting.
+
 ### Scoping to Specific Servers
 
 The plugin accepts an optional `servers` config list. When provided, filtering only applies to tool calls targeting those server names. When omitted, filtering applies to all servers. This lets operators scope the filter to just their GitHub MCP server(s).
@@ -83,6 +105,9 @@ plugins:
         - "myorg/infra-*"      # fnmatch pattern
       servers:                 # Optional: restrict to these server names
         - "github"
+      augment_descriptions: true   # Optional (default false): inject policy info into tool descriptions
+      augment_blocklist_detail: false  # Optional (default false): enumerate blocked repos in descriptions
+      augment_message: ""      # Optional: custom message override (replaces auto-generated text)
 ```
 
 ## Files to Create/Modify
@@ -113,6 +138,26 @@ The plugin module containing two classes:
 - Return `ctx.evolve(response_payload=filtered_payload)`
 - On parse error → fail-closed: replace response with an error message (never leak unfiltered data)
 
+*Tool description augmentation — `on_post_masking(ctx)` for `tools/list` responses*:
+- If `augment_descriptions` is `False` → skip augmentation logic
+- If `servers` is configured and `ctx.server_name` is not in the set → return ctx unchanged
+- Detect `tools/list` response by checking `ctx.method == "tools/list"` (or equivalent context field)
+- For each tool in the response whose `name` is in `CATEGORY_1_TOOLS` or `SEARCH_TOOLS`:
+  - If `augment_message` is set → append that string verbatim to the tool's `description`
+  - Else → build the auto-generated policy summary:
+    - Allowlist: enumerate repos (summarize if >10) with "restricted to" phrasing
+    - Blocklist + `augment_blocklist_detail`: enumerate repos with "excluded" phrasing
+    - Blocklist without detail: generic "Some repositories are restricted by policy"
+  - Append the generated text to the existing `description` with a `\n\n` separator
+- Return `ctx.evolve(response_payload=augmented_payload)`
+
+*Helper — `_build_augmentation_text() -> str`*:
+- If `augment_message` is set → return it directly
+- Allowlist mode with ≤10 repos → `"Note: This tool is restricted to the following repositories: {repos}. Requests targeting other repositories will be denied."`
+- Allowlist mode with >10 repos → summarize by org/pattern count
+- Blocklist mode with detail → `"Note: The following repositories are excluded: {repos}. Do not attempt to access these repositories."`
+- Blocklist mode without detail → `"Note: Some repositories are restricted by policy. Requests targeting restricted repositories will be denied."`
+
 *Helper — `_repo_matches(repo: str) -> bool`*:
 - Lowercases the repo string
 - Iterates configured patterns, applying `fnmatch.fnmatch`
@@ -130,6 +175,9 @@ The plugin module containing two classes:
   - Validates each repo contains a `/` (basic format check for `owner/repo` or pattern like `org/*`)
   - Stores optional `servers` list
   - Stores optional `priority` override (default 55)
+  - Stores optional `augment_descriptions` bool (default `False`)
+  - Stores optional `augment_blocklist_detail` bool (default `False`)
+  - Stores optional `augment_message` string (default `None`)
 - `register(registry)`:
   - Creates `GitHubRepoFilterHook` with the parsed config
   - Calls `registry.register(hook, priority=self._priority)`
@@ -150,6 +198,10 @@ Comprehensive tests organized into classes:
 - `test_configure_invalid_repo_format_raises` — ValueError for entries without `/`
 - `test_configure_custom_priority` — overrides default 55
 - `test_configure_servers_list` — stores server filter list
+- `test_configure_augment_descriptions_default_false` — defaults to False when not specified
+- `test_configure_augment_descriptions_true` — stores augment flag
+- `test_configure_augment_blocklist_detail` — stores blocklist detail flag
+- `test_configure_augment_message_override` — stores custom message string
 - `test_register_adds_hook_to_registry` — verifies hook appears in registry after build()
 
 **`TestGitHubRepoFilterHookInput`** — input filtering (all async):
@@ -174,6 +226,18 @@ Comprehensive tests organized into classes:
 - `test_output_parse_error_fails_closed` — malformed response content → response is blocked (replaced with error text), never leaks unfiltered data
 - `test_allowlist_output_keeps_only_matching` — allowlist mode keeps only matching repos in search results
 - `test_blocklist_output_removes_matching` — blocklist mode removes only matching repos from search results
+
+**`TestGitHubRepoFilterHookAugmentation`** — tool description augmentation (all async):
+- `test_augment_disabled_by_default` — `augment_descriptions` not set → `tools/list` response is unchanged
+- `test_augment_allowlist_appends_repo_list` — allowlist mode with 3 repos → each Category 1/2 tool description gets "restricted to: repo1, repo2, repo3" appended
+- `test_augment_blocklist_no_detail` — blocklist mode, `augment_blocklist_detail` false → generic "Some repositories are restricted by policy" appended
+- `test_augment_blocklist_with_detail` — blocklist mode, `augment_blocklist_detail` true → blocked repos enumerated in description
+- `test_augment_message_override` — `augment_message` set → that exact string is appended instead of auto-generated text
+- `test_augment_message_override_ignores_mode` — custom message is used regardless of allowlist/blocklist mode
+- `test_augment_skips_category3_tools` — non-repo tools (`get_me`, `list_notifications`) are not modified
+- `test_augment_respects_server_scoping` — augmentation only applies when server matches
+- `test_augment_large_repo_list_summarizes` — allowlist with >10 repos → description uses summary instead of full enumeration
+- `test_augment_preserves_original_description` — original tool description text is preserved, new text is appended after `\n\n`
 
 ### 3. `pyproject.toml` (MODIFY)
 
