@@ -1,5 +1,10 @@
 # Plan: Add SSE Transport Support to mcp-zero
 
+> **STATUS**: This plan has been **FULLY IMPLEMENTED**. All four phases (outbound SSE
+> transport, inbound SSE endpoints, integration tests, and documentation updates) are
+> complete. SSE is marked as deprecated in the MCP spec (2025-03-26) but remains available
+> for backward compatibility. Controlled by `MCP_SSE_ENABLED` env var (default: `true`).
+
 ## Background
 
 The MCP specification (protocol version 2024-11-05) defined an SSE (Server-Sent Events) transport using a dual-endpoint architecture. While officially deprecated in the 2025-03-26 spec in favor of Streamable HTTP, SSE remains widely deployed and many MCP servers/clients still only support it. Adding SSE support to mcp-zero enables the gateway to interoperate with the broader MCP ecosystem.

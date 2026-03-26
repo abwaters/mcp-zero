@@ -1,9 +1,13 @@
 # Plugin Architecture Design
 
 > **STATUS**: This design has been **IMPLEMENTED**. The plugin infrastructure, entry-point
-> discovery, `PluginManager`, and Presidio-as-a-plugin are all in production code. The
-> built-in Presidio plugin lives at `src/mcp_zero/plugins/presidio_masking.py` and is
-> registered via the `mcp_zero.plugins` entry-point group in `pyproject.toml`.
+> discovery, `PluginManager`, and two built-in plugins are all in production code:
+>
+> - **Presidio masking** — `src/mcp_zero/plugins/presidio_masking.py` (PII detection and redaction)
+> - **GitHub repo filter** — `src/mcp_zero/plugins/github_repo_filter.py` (allowlist/blocklist enforcement on GitHub repositories)
+>
+> Both are registered via the `mcp_zero.plugins` entry-point group in `pyproject.toml`.
+> See [`docs/plugins/`](plugins/) for user-facing plugin documentation.
 >
 > Phase 2 (extracting Presidio into a separate package) and Phase 3 (example plugins)
 > from the implementation plan below have not been started — Presidio remains a built-in

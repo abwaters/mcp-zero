@@ -36,17 +36,17 @@ flowchart LR
 
 ## Startup Loading Sequence
 
-The `run()` function in `src/mcp_zero/main.py` (line 283) executes the following steps in order:
+The `run()` function in `src/mcp_zero/main.py` executes the following steps in order:
 
 ```mermaid
 flowchart TD
-    A["1. Configure logging<br/>(LOG_LEVEL, LOG_FORMAT)"] --> B["2. Check MCP_ALLOW_INSECURE"]
+    A["1. Configure logging<br/>(LOG_LEVEL, LOG_FORMAT)"] --> B["2. Check MCP_SKIP_TLS_VALIDATION<br/>& MCP_RELAX_STARTUP_CHECKS"]
     B --> C["3. Load policy file<br/>(MCP_POLICY_FILE)"]
     C --> D["4. Apply logging overrides<br/>from policy file"]
     D --> E["5. Build analytics config<br/>(merge env + policy)"]
     E --> F["6. Build pipeline<br/>(identity, governance, plugins,<br/>analytics, audit hooks)"]
     F --> G{"7. Pipeline exists?"}
-    G -->|No| H{"MCP_ALLOW_INSECURE?"}
+    G -->|No| H{"MCP_RELAX_STARTUP_CHECKS?"}
     H -->|No| I["EXIT 78<br/>Fail-closed"]
     H -->|Yes| J["Warn: insecure mode"]
     G -->|Yes| K["8. Build OBO provider"]
@@ -57,16 +57,16 @@ flowchart TD
 
 | Step | What happens | Key source |
 |------|-------------|------------|
-| 1 | `configure_logging()` with `LOG_LEVEL` (default `INFO`) and `LOG_FORMAT` (default `json`) | `main.py:285-288` |
-| 2 | Log warning if `MCP_ALLOW_INSECURE` is truthy | `main.py:290-291` |
-| 3 | If `MCP_POLICY_FILE` is set, load and validate the policy file; otherwise fall back to `MCP_UPSTREAM_URL` legacy mode | `main.py:293` |
-| 4 | If the policy file has a `logging` section, override the root logger level and format | `main.py:296-302` |
-| 5 | Merge `ANALYTICS_*` env vars with policy `analytics` section (env wins) | `main.py:307` |
-| 6 | Register hooks: Identity (priority 10), Governance (50), Plugins (declared), Analytics (145), Audit (150) | `main.py:323` |
-| 7 | If no pipeline was built and `MCP_ALLOW_INSECURE` is not set, exit with code 78 (`EX_CONFIG`) | `main.py:329-338` |
-| 8 | Build OBO auth provider from `OKTA_TOKEN_ENDPOINT`, `OKTA_CLIENT_ID`, `OKTA_CLIENT_SECRET` | `main.py:348` |
-| 9 | Wire `ServerManager`, `ProxyServer`, ASGI app | `main.py:350-352` |
-| 10 | Start uvicorn on `MCP_HOST` (default `0.0.0.0`) / `MCP_PORT` (default `8080`) | `main.py:354-381` |
+| 1 | `configure_logging()` with `LOG_LEVEL` (default `INFO`) and `LOG_FORMAT` (default `json`) | `main.py` |
+| 2 | Log warnings if `MCP_SKIP_TLS_VALIDATION` or `MCP_RELAX_STARTUP_CHECKS` are set | `main.py` |
+| 3 | If `MCP_POLICY_FILE` is set, load and validate the policy file; otherwise fall back to `MCP_UPSTREAM_URL` legacy mode | `main.py` |
+| 4 | If the policy file has a `logging` section, override the root logger level and format | `main.py` |
+| 5 | Merge `ANALYTICS_*` env vars with policy `analytics` section (env wins) | `main.py` |
+| 6 | Register hooks: Identity (priority 10), Governance (50), Plugins (declared), Analytics (145), Audit (150) | `main.py` |
+| 7 | If no pipeline was built and `MCP_RELAX_STARTUP_CHECKS` is not set, exit with code 78 (`EX_CONFIG`) | `main.py` |
+| 8 | Build OBO auth provider from `OKTA_TOKEN_ENDPOINT`, `OKTA_CLIENT_ID`, `OKTA_CLIENT_SECRET` | `main.py` |
+| 9 | Wire `ServerManager`, `ProxyServer`, ASGI app | `main.py` |
+| 10 | Start uvicorn on `MCP_HOST` (default `0.0.0.0`) / `MCP_PORT` (default `8080`) | `main.py` |
 
 ## Environment Variables Reference
 
@@ -76,7 +76,10 @@ flowchart TD
 |----------|-------------|---------|
 | `MCP_POLICY_FILE` | Path to YAML/JSON policy file | *(none)* |
 | `MCP_UPSTREAM_URL` | Legacy: single upstream server URL (used when no policy file) | *(none)* |
-| `MCP_ALLOW_INSECURE` | Disable HTTPS enforcement and allow startup without security controls (`true`, `1`, `yes`) | `false` |
+| `MCP_RELAX_STARTUP_CHECKS` | Allow startup without required security controls (`true`, `1`, `yes`). Dev/testing only. | `false` |
+| `MCP_SKIP_TLS_VALIDATION` | Disable HTTPS enforcement on upstream server, identity issuer, and OBO URLs (`true`, `1`, `yes`). Dev/testing only. | `false` |
+| `MCP_STRICT_SECURITY` | Require both identity AND governance at startup (`true`, `1`, `yes`) | `false` |
+| `MCP_SSE_ENABLED` | Enable deprecated inbound SSE endpoints (`/mcp/sse*`) | `true` |
 | `MCP_HOST` | Bind address for the gateway | `0.0.0.0` |
 | `MCP_PORT` | Bind port for the gateway | `8080` |
 
@@ -180,6 +183,15 @@ servers:
       - mcp.read
 ```
 
+**SSE transport (deprecated):**
+
+```yaml
+servers:
+  - name: legacy-sse-server
+    transport: sse
+    url: https://legacy.example.com/sse
+```
+
 **stdio transport:**
 
 ```yaml
@@ -195,7 +207,7 @@ servers:
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `name` | `string` | Yes | — | Unique server identifier |
-| `transport` | `string` | Yes | — | `http` or `stdio` |
+| `transport` | `string` | Yes | — | `http`, `sse`, or `stdio` |
 | `url` | `string` | HTTP only | — | Upstream URL (HTTPS enforced) |
 | `command` | `string` | stdio only | — | Executable to launch |
 | `args` | `list[string]` | No | `[]` | Command arguments (stdio) |
@@ -404,7 +416,7 @@ Each frozen dataclass performs its own validation in `__post_init__`:
 
 - `PolicyConfig` — validates `version == 1`
 - `IdentityProviderConfig` — requires `provider`, `issuer`, `audience`; enforces HTTPS on `issuer`
-- `ServerDefinition` — requires `name`; validates `transport` is `http` or `stdio`
+- `ServerDefinition` — requires `name`; validates `transport` is `http`, `sse`, or `stdio`
 - `ServerConfig` — requires `url` for HTTP, `command` for stdio; enforces HTTPS; validates OBO constraints
 - `PolicyRule` — requires `id` and `description`
 - `PolicyServerAccess` — requires `name`
@@ -429,7 +441,7 @@ flowchart TD
 
     BUILD --> PIPELINE_EXISTS{"Pipeline<br/>created?"}
     PIPELINE_EXISTS -->|Yes| RUN["Start accepting traffic"]
-    PIPELINE_EXISTS -->|No| INSECURE{"MCP_ALLOW_INSECURE<br/>= true?"}
+    PIPELINE_EXISTS -->|No| INSECURE{"MCP_RELAX_STARTUP_CHECKS<br/>= true?"}
     INSECURE -->|Yes| WARN["Log warning,<br/>start without security"]
     INSECURE -->|No| REFUSE["Log CRITICAL,<br/>exit(78)"]
 ```
@@ -438,9 +450,9 @@ flowchart TD
 
 | Default | Description |
 |---------|-------------|
-| **Fail-closed startup** | Gateway refuses to start without identity or policy configuration. Exit code 78 (`EX_CONFIG` per `sysexits.h`). Override with `MCP_ALLOW_INSECURE=true`. |
+| **Fail-closed startup** | Gateway refuses to start without identity or policy configuration. Exit code 78 (`EX_CONFIG` per `sysexits.h`). Override with `MCP_RELAX_STARTUP_CHECKS=true` (dev only). |
 | **Default deny** | Policy `default` field defaults to `deny` — requests without a matching allow rule are rejected. |
-| **HTTPS enforcement** | Identity issuer URLs and HTTP server URLs must use HTTPS. Override with `allow_insecure: true` in the policy file or `MCP_ALLOW_INSECURE=true` env var. |
+| **HTTPS enforcement** | Identity issuer URLs and HTTP server URLs must use HTTPS. Override with `allow_insecure: true` in the policy file or `MCP_SKIP_TLS_VALIDATION=true` env var. |
 | **Frozen dataclasses** | All configuration objects are frozen (`@dataclass(frozen=True)`), preventing runtime mutation after construction. |
 | **No hot-reload** | Policy files are loaded once at startup. Changes require a restart. |
 | **Explicit plugin loading** | Plugins must be declared in the policy file to activate — no auto-discovery of installed packages. |
@@ -467,7 +479,9 @@ The gateway supports three operational modes depending on configuration:
 |------|----------------|----------|------------|---------|-----------|----------|
 | **Full policy** | `MCP_POLICY_FILE` with `identity` section | Enabled | Enabled | Per-policy | Optional | Production |
 | **Policy without identity** | `MCP_POLICY_FILE` without `identity`, plus `OKTA_ISSUER` + `OKTA_AUDIENCE` | Env-var fallback | Enabled | Per-policy | Optional | Staging / hybrid |
-| **Insecure** | `MCP_ALLOW_INSECURE=true` | Disabled | Disabled | Disabled | Optional | Development / testing |
+| **Insecure** | `MCP_RELAX_STARTUP_CHECKS=true` | Disabled | Disabled | Disabled | Optional | Development / testing |
+
+> **Note:** `MCP_SKIP_TLS_VALIDATION=true` can be combined with any mode to disable HTTPS enforcement on URLs (dev only). `MCP_STRICT_SECURITY=true` can be added to the Full policy mode to require both identity and governance.
 
 In all modes, the audit hook is registered whenever a pipeline exists.
 

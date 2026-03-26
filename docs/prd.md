@@ -39,7 +39,7 @@ The gateway provides hard enforcement for hosted enterprise AI tools and observa
 #### Identity & Authentication
 - Okta integration
 - OAuth2 Authorization Code flow (primary)
-- Gateway validates user identity via JWT (on-behalf-of token exchange infrastructure in development)
+- Gateway validates user identity via JWT with On-Behalf-Of (OBO) token exchange (RFC 8693, fully implemented — requires explicit configuration)
 
 #### Governance
 - Static YAML/JSON policy configuration
@@ -122,6 +122,8 @@ And logs the action with policy decision "deny"
 - ✅ OBO token exchange (fully implemented and operational - requires explicit env var configuration. See [docs/okta_obo_for_an_enterprise_mcp_gateway.md](okta_obo_for_an_enterprise_mcp_gateway.md))
 - ✅ Plugin architecture (entry point discovery, hook registration, lifecycle management. See [docs/plugin-architecture-design.md](plugin-architecture-design.md))
 - ✅ Analytics/Redis integration (time-bucketed metrics, gateway registry, heartbeat. See [docs/analytics-redis-plan.md](analytics-redis-plan.md))
+- ✅ SSE transport support (inbound + outbound, deprecated but available for backward compat. See [docs/plan-sse-support.md](plan-sse-support.md))
+- ✅ GitHub repo filter plugin (allowlist/blocklist on GitHub repository access. See [docs/plugins/github-repo-filter.md](plugins/github-repo-filter.md))
 
 ### Partially Implemented
 - ⚠️ Presidio masking extraction as standalone plugin (Presidio is currently a built-in plugin in core package, not extracted to separate `mcp-zero-presidio` package)
