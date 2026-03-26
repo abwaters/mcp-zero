@@ -80,7 +80,9 @@
 - ✅ Retry/reconnection logic for transient failures
 
 #### Remaining Hardening Items 🔄
-- 🔄 **Analytics/Redis Integration**: Redis-backed operational metrics (implemented but marked as optional/expansion feature)
+- ✅ **Analytics/Redis Integration**: Redis-backed operational metrics (fully implemented as optional feature — see Phase 3)
+- ✅ **SSE Transport Support**: Inbound and outbound SSE transport, integration tests, docs (deprecated but available for backward compat)
+- ✅ **GitHub Repo Filter Plugin**: Allowlist/blocklist enforcement on GitHub repository references (input + output filtering)
 - ⚠️ **Tool listing authorization**: `list_tools` currently bypasses identity/governance pipeline (known issue)
 - ⚠️ **Strict security mode**: Optional fail-closed startup validation (governance can be silently disabled via config gaps)
 - 📋 Documentation & runbooks (in progress)

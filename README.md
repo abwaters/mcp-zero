@@ -285,11 +285,11 @@ src/mcp_zero/
 ├── identity/            # Okta JWT validation, OBO token exchange
 ├── governance/          # Policy loading, evaluation, enforcement
 ├── masking/             # Masking engine interface and hook
-├── plugins/             # Built-in plugins (Presidio masking)
+├── plugins/             # Built-in plugins (Presidio masking, GitHub repo filter)
 ├── pipeline/            # Hook lifecycle, registry, execution
 ├── proxy/               # Starlette app, server management, tool routing
 ├── analytics/           # Optional Redis-based analytics
-└── transport/           # HTTP and stdio MCP transport clients
+└── transport/           # HTTP, SSE, and stdio MCP transport clients
 ```
 
 ### Architecture
@@ -330,6 +330,9 @@ Hooks execute in priority order. Any hook can short-circuit the pipeline (e.g., 
 | [`docs/enterprise_mcp_gateway_threat_model_canvas.md`](docs/enterprise_mcp_gateway_threat_model_canvas.md) | Threat model and mitigations |
 | [`docs/okta_obo_for_an_enterprise_mcp_gateway.md`](docs/okta_obo_for_an_enterprise_mcp_gateway.md) | OBO token exchange deep-dive |
 | [`docs/enterprise_mcp_gateway_leadership_explainer.md`](docs/enterprise_mcp_gateway_leadership_explainer.md) | Non-technical stakeholder overview |
+| [`docs/configuration-architecture.md`](docs/configuration-architecture.md) | Configuration loading, env vars, policy schema, precedence rules |
+| [`docs/cors-configuration.md`](docs/cors-configuration.md) | CORS setup for browser-based MCP clients |
+| [`docs/plugins/`](docs/plugins/) | Plugin quickstart and per-plugin documentation |
 
 ## Comparison
 
