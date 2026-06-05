@@ -1,0 +1,30 @@
+name: Dependency Review
+
+on:
+  pull_request:
+    branches: [main]
+
+# Read-only token; the action posts its summary via the PR comment below.
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          # Block PRs that introduce dependencies with known
+          # moderate-or-higher vulnerabilities.
+          fail-on-severity: moderate
+          # Flag dependencies whose licenses are incompatible with the
+          # project's MIT license.
+          deny-licenses: GPL-2.0, GPL-3.0, AGPL-3.0, LGPL-3.0
+          comment-summary-in-pr: on-failure
