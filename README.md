@@ -1,5 +1,11 @@
 # mcp-zero
 
+[![CI](https://github.com/abwaters/mcp-zero/actions/workflows/ci.yml/badge.svg)](https://github.com/abwaters/mcp-zero/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/abwaters/mcp-zero/actions/workflows/codeql.yml/badge.svg)](https://github.com/abwaters/mcp-zero/actions/workflows/codeql.yml)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/abwaters/mcp-zero/badge)](https://securityscorecards.dev/viewer/?uri=github.com/abwaters/mcp-zero)
+[![License: MIT](https://img.shields.io/github/license/abwaters/mcp-zero)](LICENSE)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)](pyproject.toml)
+
 An open-source gateway that sits between your enterprise AI tools and MCP servers to enforce the security controls that compliance teams require before approving [MCP](https://modelcontextprotocol.io) adoption.
 
 Without it, AI tools can call any MCP server with no access control, no audit trail, and no data protection — a non-starter in regulated environments. mcp-zero adds the missing governance layer: it validates user identity, checks policy rules, masks sensitive data, and logs every action — all inline, before requests ever reach downstream servers.
