@@ -7,7 +7,8 @@ on:
     branches: [main]
 
 concurrency:
-  group: ${{ github.actor == 'dependabot[bot]' && 'dependabot-ci' || format('ci-{0}', github.run_id) }}
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 # Minimal default token; jobs that need more escalate explicitly below.
 permissions:
@@ -23,6 +24,7 @@ jobs:
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.12"
+          cache: 'pip'
 
       - name: Install dependencies
         run: pip install -e ".[dev]"
@@ -45,6 +47,7 @@ jobs:
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.12"
+          cache: 'pip'
 
       - name: Install dependencies
         run: pip install -e ".[dev]"
@@ -53,7 +56,7 @@ jobs:
         run: pytest tests/integration/test_stdio_integration.py -v
 
   dependabot-auto-merge:
-    needs: test
+    needs: [test, integration]
     runs-on: ubuntu-latest
     if: github.actor == 'dependabot[bot]'
 

@@ -1,0 +1,5 @@
+[allowlist]
+  description = "Test fixtures with intentional fake PII/secrets for Presidio masking tests"
+  paths = [
+    '''data/pii_samples\.txt''',
+  ]
