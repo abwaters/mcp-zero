@@ -8,6 +8,7 @@ from typing import Any
 
 import mcp.types as types
 from mcp.server.lowlevel import Server
+from mcp.server.lowlevel.server import ServerRequestContext
 
 from mcp_zero.context import HookContext, PolicyDecision, RequestContext
 from mcp_zero.governance.config import PolicyEffect
@@ -47,24 +48,31 @@ class ProxyServer:
         self._policy_engine = policy_engine
         self._identity_required = identity_required
 
-        self._mcp_server = Server("mcp-zero-proxy")
-        self._register_handlers()
+        self._mcp_server = Server(
+            "mcp-zero-proxy",
+            on_list_tools=self._handle_list_tools,
+            on_call_tool=self._handle_call_tool,
+        )
 
     @property
     def mcp_server(self) -> Server:
         """Return the underlying MCP Server for wiring into a transport."""
         return self._mcp_server
 
-    def _register_handlers(self) -> None:
-        @self._mcp_server.list_tools()
-        async def handle_list_tools() -> list[types.Tool]:
-            return await self._list_tools()
+    async def _handle_list_tools(
+        self,
+        ctx: ServerRequestContext,
+        params: types.PaginatedRequestParams | None,
+    ) -> types.ListToolsResult:
+        return types.ListToolsResult(tools=await self._list_tools())
 
-        @self._mcp_server.call_tool()
-        async def handle_call_tool(
-            name: str, arguments: dict[str, Any] | None
-        ) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
-            return await self._call_tool(name, arguments)
+    async def _handle_call_tool(
+        self,
+        ctx: ServerRequestContext,
+        params: types.CallToolRequestParams,
+    ) -> types.CallToolResult:
+        content = await self._call_tool(params.name, params.arguments)
+        return types.CallToolResult(content=content, is_error=False)
 
     async def _list_tools(self) -> list[types.Tool]:
         """Query all upstream servers and aggregate their tools with namespace prefixes.
@@ -249,7 +257,7 @@ class ProxyServer:
                 if self._pipeline:
                     response_payload = {
                         "content": [c.model_dump() for c in upstream_result.content],
-                        "isError": upstream_result.isError,
+                        "is_error": upstream_result.is_error,
                     }
                     post_ctx = hook_ctx.evolve(response_payload=response_payload)
                     post_result = await self._pipeline.execute(post_ctx)

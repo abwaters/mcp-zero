@@ -1,6 +1,11 @@
 # mcp v1 → v2 Migration — Phase 0 Confirmed API Mapping
 
-Status: **Phase 0 complete** (spike + API confirmation). Gates Phases 1–7.
+Status: **Migration complete.** Phase 0 (spike + API confirmation) is recorded
+below; Phases 1–7 are implemented on `feat/mcp-v2`. The full suite passes on
+`mcp==2.0.0`: **1099 non-integration + 39 integration = 1138 tests green**,
+`ruff format`/`check` clean. The Phase 0 mapping proved accurate — no surprises
+during implementation, and open item #1 (live upstream `session.initialize()`)
+is confirmed working by the stdio/SSE integration tests.
 
 This document records the *verified* v2 API surface, introspected against an
 actually-installed `mcp==2.0.0` (scratch venv, Python 3.12), not the migration

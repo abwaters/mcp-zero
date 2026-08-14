@@ -52,7 +52,7 @@ class TestOutputMaskingBasic:
         ctx = _make_ctx(
             response_payload={
                 "content": [{"type": "text", "text": "User John Doe has 3 issues"}],
-                "isError": False,
+                "is_error": False,
             }
         )
         result = await hook.on_post_masking(ctx)
@@ -89,7 +89,7 @@ class TestOutputMaskingBasic:
                     {"type": "text", "text": "john@example.com"},
                     {"type": "text", "text": "Jane Smith"},
                 ],
-                "isError": False,
+                "is_error": False,
             }
         )
         result = await hook.on_post_masking(ctx)
@@ -109,7 +109,7 @@ class TestOutputMaskingBasic:
         ctx = _make_ctx(
             response_payload={
                 "content": [{"type": "text", "text": "safe text"}],
-                "isError": False,
+                "is_error": False,
             }
         )
         result = await hook.on_post_masking(ctx)
@@ -493,7 +493,7 @@ class TestOutputMaskingErrorMessages:
                         "text": "Error: user john@example.com not found",
                     }
                 ],
-                "isError": True,
+                "is_error": True,
             }
         )
         result = await hook.on_post_masking(ctx)
@@ -502,5 +502,5 @@ class TestOutputMaskingErrorMessages:
         assert (
             result.response_payload["content"][0]["text"] == "Error: user <EMAIL_ADDRESS> not found"
         )
-        # isError flag is preserved (non-string, passes through)
-        assert result.response_payload["isError"] is True
+        # is_error flag is preserved (non-string, passes through)
+        assert result.response_payload["is_error"] is True

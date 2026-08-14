@@ -48,8 +48,8 @@ class TestParseTool:
 class TestNamespaceTools:
     def test_prefixes_all_tools(self):
         tools = [
-            Tool(name="get_weather", description="Get weather", inputSchema={"type": "object"}),
-            Tool(name="get_time", description="Get time", inputSchema={"type": "object"}),
+            Tool(name="get_weather", description="Get weather", input_schema={"type": "object"}),
+            Tool(name="get_time", description="Get time", input_schema={"type": "object"}),
         ]
         result = namespace_tools("weather-srv", tools)
         assert len(result) == 2
@@ -58,10 +58,10 @@ class TestNamespaceTools:
 
     def test_preserves_description_and_schema(self):
         schema = {"type": "object", "properties": {"city": {"type": "string"}}}
-        tools = [Tool(name="get", description="desc", inputSchema=schema)]
+        tools = [Tool(name="get", description="desc", input_schema=schema)]
         result = namespace_tools("srv", tools)
         assert result[0].description == "desc"
-        assert result[0].inputSchema == schema
+        assert result[0].input_schema == schema
 
     def test_empty_list(self):
         assert namespace_tools("srv", []) == []

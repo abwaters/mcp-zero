@@ -16,19 +16,23 @@ import asyncio
 
 from mcp.server.lowlevel import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import TextContent, Tool
+from mcp.types import (
+    CallToolRequestParams,
+    CallToolResult,
+    ListToolsResult,
+    PaginatedRequestParams,
+    TextContent,
+    Tool,
+)
 
 
-def _build_server() -> Server:
-    server = Server("echo-test-server")
-
-    @server.list_tools()
-    async def list_tools() -> list[Tool]:
-        return [
+async def _list_tools(ctx, params: PaginatedRequestParams | None) -> ListToolsResult:
+    return ListToolsResult(
+        tools=[
             Tool(
                 name="echo",
                 description="Returns the input text unchanged.",
-                inputSchema={
+                input_schema={
                     "type": "object",
                     "properties": {"text": {"type": "string"}},
                     "required": ["text"],
@@ -37,7 +41,7 @@ def _build_server() -> Server:
             Tool(
                 name="greet",
                 description="Returns a greeting for the given name.",
-                inputSchema={
+                input_schema={
                     "type": "object",
                     "properties": {"name": {"type": "string"}},
                     "required": ["name"],
@@ -46,7 +50,7 @@ def _build_server() -> Server:
             Tool(
                 name="get_secret_data",
                 description="Returns text containing PII for masking tests.",
-                inputSchema={
+                input_schema={
                     "type": "object",
                     "properties": {},
                 },
@@ -54,42 +58,45 @@ def _build_server() -> Server:
             Tool(
                 name="reverse",
                 description="Returns the input text reversed.",
-                inputSchema={
+                input_schema={
                     "type": "object",
                     "properties": {"text": {"type": "string"}},
                     "required": ["text"],
                 },
             ),
         ]
+    )
 
-    @server.call_tool()
-    async def call_tool(name: str, arguments: dict | None) -> list[TextContent]:
-        arguments = arguments or {}
 
-        if name == "echo":
-            text = arguments.get("text", "")
-            return [TextContent(type="text", text=text)]
+async def _call_tool(ctx, params: CallToolRequestParams) -> CallToolResult:
+    name = params.name
+    arguments = params.arguments or {}
 
-        if name == "greet":
-            person_name = arguments.get("name", "World")
-            return [TextContent(type="text", text=f"Hello, {person_name}!")]
+    if name == "echo":
+        text = arguments.get("text", "")
+        content = [TextContent(type="text", text=text)]
+    elif name == "greet":
+        person_name = arguments.get("name", "World")
+        content = [TextContent(type="text", text=f"Hello, {person_name}!")]
+    elif name == "get_secret_data":
+        # Deliberately returns text containing PII entities.
+        content = [
+            TextContent(
+                type="text",
+                text=("Contact John Smith at john.smith@example.com or call 555-123-4567."),
+            )
+        ]
+    elif name == "reverse":
+        text = arguments.get("text", "")
+        content = [TextContent(type="text", text=text[::-1])]
+    else:
+        content = [TextContent(type="text", text=f"Unknown tool: {name}")]
 
-        if name == "get_secret_data":
-            # Deliberately returns text containing PII entities.
-            return [
-                TextContent(
-                    type="text",
-                    text=("Contact John Smith at john.smith@example.com or call 555-123-4567."),
-                )
-            ]
+    return CallToolResult(content=content, is_error=False)
 
-        if name == "reverse":
-            text = arguments.get("text", "")
-            return [TextContent(type="text", text=text[::-1])]
 
-        return [TextContent(type="text", text=f"Unknown tool: {name}")]
-
-    return server
+def _build_server() -> Server:
+    return Server("echo-test-server", on_list_tools=_list_tools, on_call_tool=_call_tool)
 
 
 async def main() -> None:

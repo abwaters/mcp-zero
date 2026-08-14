@@ -29,13 +29,8 @@ def parse_tool(namespaced_name: str) -> tuple[str, str]:
 
 def namespace_tools(server_name: str, tools: list[Tool]) -> list[Tool]:
     """Return copies of *tools* with their names prefixed by *server_name*."""
-    result: list[Tool] = []
-    for tool in tools:
-        result.append(
-            Tool(
-                name=namespace_tool(server_name, tool.name),
-                description=tool.description,
-                inputSchema=tool.inputSchema,
-            )
-        )
-    return result
+    # model_copy preserves all fields (input_schema, annotations, output_schema,
+    # etc.) while only rewriting the name.
+    return [
+        tool.model_copy(update={"name": namespace_tool(server_name, tool.name)}) for tool in tools
+    ]
