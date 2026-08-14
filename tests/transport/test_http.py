@@ -23,11 +23,10 @@ def mock_sdk(monkeypatch):
 
     read_stream = MagicMock()
     write_stream = MagicMock()
-    get_session_id = MagicMock(return_value=None)
 
-    # streamable_http_client yields (read, write, get_session_id)
+    # mcp v2 streamable_http_client yields (read, write)
     mock_http_cm = AsyncMock()
-    mock_http_cm.__aenter__ = AsyncMock(return_value=(read_stream, write_stream, get_session_id))
+    mock_http_cm.__aenter__ = AsyncMock(return_value=(read_stream, write_stream))
     mock_http_cm.__aexit__ = AsyncMock(return_value=False)
 
     # ClientSession context manager
@@ -123,7 +122,7 @@ class TestStreamableHTTPTransport:
         ctx = RequestContext(correlation_id="c-1", trace_id="t-1")
         t = StreamableHTTPTransport(cfg)
 
-        with patch("mcp_zero.transport.http.httpx.AsyncClient") as mock_httpx:
+        with patch("mcp_zero.transport.http.httpx2.AsyncClient") as mock_httpx:
             mock_httpx_inst = AsyncMock()
             mock_httpx_inst.__aenter__ = AsyncMock(return_value=mock_httpx_inst)
             mock_httpx_inst.__aexit__ = AsyncMock(return_value=False)
@@ -145,7 +144,7 @@ class TestStreamableHTTPTransport:
         ctx = RequestContext(correlation_id="c-1")  # trace_id defaults to None
         t = StreamableHTTPTransport(cfg)
 
-        with patch("mcp_zero.transport.http.httpx.AsyncClient") as mock_httpx:
+        with patch("mcp_zero.transport.http.httpx2.AsyncClient") as mock_httpx:
             mock_httpx_inst = AsyncMock()
             mock_httpx_inst.__aenter__ = AsyncMock(return_value=mock_httpx_inst)
             mock_httpx_inst.__aexit__ = AsyncMock(return_value=False)
@@ -172,7 +171,7 @@ class TestStreamableHTTPTransport:
         cfg = make_http_config()
         t = StreamableHTTPTransport(cfg)
 
-        with patch("mcp_zero.transport.http.httpx.AsyncClient") as mock_httpx:
+        with patch("mcp_zero.transport.http.httpx2.AsyncClient") as mock_httpx:
             mock_httpx_inst = AsyncMock()
             mock_httpx_inst.__aenter__ = AsyncMock(return_value=mock_httpx_inst)
             mock_httpx_inst.__aexit__ = AsyncMock(return_value=False)
@@ -189,7 +188,7 @@ class TestStreamableHTTPTransport:
         ctx = RequestContext(correlation_id="c-1", trace_id="t-1")
         t = StreamableHTTPTransport(cfg)
 
-        with patch("mcp_zero.transport.http.httpx.AsyncClient") as mock_httpx:
+        with patch("mcp_zero.transport.http.httpx2.AsyncClient") as mock_httpx:
             mock_httpx_inst = AsyncMock()
             mock_httpx_inst.__aenter__ = AsyncMock(return_value=mock_httpx_inst)
             mock_httpx_inst.__aexit__ = AsyncMock(return_value=False)
@@ -212,7 +211,7 @@ class TestStreamableHTTPTransport:
         ctx = RequestContext()
         t = StreamableHTTPTransport(cfg)
 
-        with patch("mcp_zero.transport.http.httpx.AsyncClient") as mock_httpx:
+        with patch("mcp_zero.transport.http.httpx2.AsyncClient") as mock_httpx:
             mock_httpx_inst = AsyncMock()
             mock_httpx_inst.__aenter__ = AsyncMock(return_value=mock_httpx_inst)
             mock_httpx_inst.__aexit__ = AsyncMock(return_value=False)
@@ -245,7 +244,7 @@ class TestStreamableHTTPTransport:
         )
         t = StreamableHTTPTransport(cfg)
 
-        with patch("mcp_zero.transport.http.httpx.AsyncClient") as mock_httpx:
+        with patch("mcp_zero.transport.http.httpx2.AsyncClient") as mock_httpx:
             mock_httpx_inst = AsyncMock()
             mock_httpx_inst.__aenter__ = AsyncMock(return_value=mock_httpx_inst)
             mock_httpx_inst.__aexit__ = AsyncMock(return_value=False)
@@ -269,7 +268,7 @@ class TestStreamableHTTPTransport:
         ctx = RequestContext(correlation_id="c-1", trace_id="t-1")
         t = StreamableHTTPTransport(cfg)
 
-        with patch("mcp_zero.transport.http.httpx.AsyncClient") as mock_httpx:
+        with patch("mcp_zero.transport.http.httpx2.AsyncClient") as mock_httpx:
             mock_httpx_inst = AsyncMock()
             mock_httpx_inst.__aenter__ = AsyncMock(return_value=mock_httpx_inst)
             mock_httpx_inst.__aexit__ = AsyncMock(return_value=False)
@@ -292,7 +291,7 @@ class TestStreamableHTTPTransport:
         )
         t = StreamableHTTPTransport(cfg)
 
-        with patch("mcp_zero.transport.http.httpx.AsyncClient") as mock_httpx:
+        with patch("mcp_zero.transport.http.httpx2.AsyncClient") as mock_httpx:
             mock_httpx_inst = AsyncMock()
             mock_httpx_inst.__aenter__ = AsyncMock(return_value=mock_httpx_inst)
             mock_httpx_inst.__aexit__ = AsyncMock(return_value=False)

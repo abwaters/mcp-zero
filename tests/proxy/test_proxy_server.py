@@ -48,13 +48,13 @@ def make_configs():
 
 
 def make_tool(name="get_weather", description="Get weather"):
-    return Tool(name=name, description=description, inputSchema={"type": "object"})
+    return Tool(name=name, description=description, input_schema={"type": "object"})
 
 
 def make_call_result(text="result"):
     return CallToolResult(
         content=[TextContent(type="text", text=text)],
-        isError=False,
+        is_error=False,
     )
 
 
@@ -440,7 +440,7 @@ class TestProxyServerWithPipeline:
             # Post-pipeline masks the response
             masked_payload = {
                 "content": [{"type": "text", "text": "Hello <PERSON> at <EMAIL_ADDRESS>"}],
-                "isError": False,
+                "is_error": False,
             }
             return PipelineResult(
                 context=ctx.evolve(

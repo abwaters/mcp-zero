@@ -237,7 +237,7 @@ class TestStdioToolListing:
             tools = await proxy._list_tools()
 
         by_name = {t.name: t for t in tools}
-        echo_schema = by_name["test-stdio__echo"].inputSchema
+        echo_schema = by_name["test-stdio__echo"].input_schema
         assert echo_schema["type"] == "object"
         assert "text" in echo_schema["properties"]
 

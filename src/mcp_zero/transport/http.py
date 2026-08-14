@@ -6,7 +6,7 @@ import asyncio
 import logging
 from contextlib import AsyncExitStack
 
-import httpx
+import httpx2
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
@@ -72,16 +72,18 @@ class StreamableHTTPTransport(MCPTransport):
                 if auth_token:
                     headers["Authorization"] = f"Bearer {auth_token}"
 
-                http_client: httpx.AsyncClient | None = None
+                http_client: httpx2.AsyncClient | None = None
                 if headers:
                     http_client = await stack.enter_async_context(
-                        httpx.AsyncClient(
+                        httpx2.AsyncClient(
                             headers=headers,
-                            timeout=httpx.Timeout(self._config.timeout_seconds),
+                            timeout=httpx2.Timeout(self._config.timeout_seconds),
                         )
                     )
 
-                read_stream, write_stream, _ = await stack.enter_async_context(
+                # mcp v2 yields a 2-tuple (read, write); the v1 session-id
+                # element was removed.
+                read_stream, write_stream = await stack.enter_async_context(
                     streamable_http_client(
                         self._config.url,  # type: ignore[arg-type]
                         http_client=http_client,
